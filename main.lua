@@ -193,30 +193,43 @@ end
 
 Player = Object:extend()
 Player.DIRECTION_DATA = {
-    N = { spriteIndex = 16, xFlip = false, angle = 0.25, ballXOffset = 0, ballYOffset = -3 },
-    S = { spriteIndex = 0, xFlip = false, angle = 0.75, ballXOffset = 0, ballYOffset = 6 },
-    E = { spriteIndex = 32, xFlip = true, angle = 0, ballXOffset = 6, ballYOffset = 0 },
-    W = { spriteIndex = 32, xFlip = false, angle = 0.5, ballXOffset = -3, ballYOffset = 0 },
+    N = { spriteIndex = 16, xFlip = false, velX = 0, velY = -1, ballXOffset = 2, ballYOffset = -3 },
+    S = { spriteIndex = 0, xFlip = false, velX = 0, velY = 1, ballXOffset = 2, ballYOffset = 8 },
+    E = { spriteIndex = 32, xFlip = true, velX = 1, velY = 0, ballXOffset = 8, ballYOffset = 0 },
+    W = { spriteIndex = 32, xFlip = false, velX = -1, velY = 0, ballXOffset = -3, ballYOffset = 0 },
 }
 
-function Player:new(team, gridX, gridY, isGoalkeeper)
+function Player:new(team, gridX, gridY, joypadId, isGoalkeeper)
+    self.team = team
     self.gridX = gridX
     self.gridY = gridY
+    self.joypadId = joypadId
     self.isGoalkeeper = isGoalkeeper
+
     if self.isGoalkeeper then
         -- TODO goalkeeper in goal
-        self.x = 32
-        self.y = 32
+        self.x = (FIELD_WIDTH * 8 - 8)/2
+        if self.team.playingUp then
+            self.y = FIELD_HEIGHT * 8 - 4
+        else
+            self.y = -4
+        end
     else
-        self.x = gridX * 6 * 8 - 22
-        self.y = gridY * 6 * 8 - 22
+        if self.team.playingUp then
+            self.x = (5 - gridX) * 6 * 8 - 22
+            self.y = (9 - gridY) * 6 * 8 - 22
+        else
+            self.x = gridX * 6 * 8 - 22
+            self.y = gridY * 6 * 8 - 22
+        end
     end
     self.isRunning = false
     self.direction = DIRECTIONS.S
+    if team.playingUp then
+        self.direction = DIRECTIONS.N
+    end
     self.frame = 0
-    printh(self.x)
-    printh(self.y)
-    bumpWorld:add(self, self.x, self.y, 5, 5)
+    bumpWorld:add(self, self.x, self.y, 7, 7)
 end
 
 function Player:updatePassive()
@@ -234,20 +247,20 @@ function Player:updateActive()
     -- TODO ball doesn't move if kicked while standing still
     self.isRunning = false
     local velX, velY = 0, 0
-    if btn(0) then
+    if btn(0, self.joypadId) then
         self.isRunning = true
         self.direction = DIRECTIONS.W
         velX = -1
-    elseif btn(1) then
+    elseif btn(1, self.joypadId) then
         self.isRunning = true
         self.direction = DIRECTIONS.E
         velX = 1
     end
-    if btn(2) then
+    if btn(2, self.joypadId) then
         self.isRunning = true
         self.direction = DIRECTIONS.N
         velY = -1
-    elseif btn(3) then
+    elseif btn(3, self.joypadId) then
         self.isRunning = true
         self.direction = DIRECTIONS.S
         velY = 1
@@ -267,9 +280,14 @@ function Player:updateActive()
     end
 
     if ball.controllingPlayer == self then
-        if btnp(4) then
+        if velX == 0 and velY == 0 then
+            velX = Player.DIRECTION_DATA[self.direction].velX
+            velY = Player.DIRECTION_DATA[self.direction].velY
+        end
+
+        if btnp(4, self.joypadId) then
             ball:pass(velX, velY)
-        elseif btnp(5) then
+        elseif btnp(5, self.joypadId) then
             ball:shoot(velX, velY)
         else
             local xOffset = Player.DIRECTION_DATA[self.direction].ballXOffset
@@ -289,8 +307,8 @@ end
 function Player:draw()
     spr(
         Player.DIRECTION_DATA[self.direction].spriteIndex + flr(self.frame / 4),
-        self.x - 2,
-        self.y - 3,
+        self.x - 1,
+        self.y - 2,
         1, 1,
         Player.DIRECTION_DATA[self.direction].xFlip
     )
@@ -298,18 +316,21 @@ end
 
 Team = Object:extend()
 
-function Team:new(teamId)
+function Team:new(teamId, joypadId, playingUp)
     self.teamData = TEAMS[teamId]
+    self.playingUp = playingUp
+    self.joypadId = joypadId
     self.players = {
-        Player(self, 2, 1, false),
-        Player(self, 4, 1, false),
+        Player(self, 2, 1, joypadId, false),
+        Player(self, 4, 1, joypadId, false),
+        Player(self, 1, 1, joypadId, true),
     }
     self.selectedPlayerIndex = 1
 end
 
 function Team:update()
     for i, player in ipairs(self.players) do
-        if i == self.selectedPlayerIndex then
+        if self.joypadId ~= nil and i == self.selectedPlayerIndex then
             player:updateActive()
         else
             player:updatePassive()
@@ -427,7 +448,10 @@ end
 function _init()
     bumpWorld = bump.newWorld(8)
     resetPalette()
-    team = Team('SCO')
+    teams = {
+        Team('SCO', 0, false),
+        Team('SWE', 1, true),
+    }
     ball = Ball(32, 32)
     fieldLines = {
         FieldLine(0, 0, FIELD_WIDTH * 8, 1),
@@ -453,7 +477,7 @@ function _init()
 end
 
 function _update60()
-    team:update()
+    for team in all(teams) do team:update() end
     ball:update()
 end
 
@@ -467,7 +491,7 @@ function _draw()
     drawField()
     drawTopGoal()
     ball:draw()
-    team:draw()
+    for team in all(teams) do team:draw() end
     drawBottomGoal()
 end
 -- END MAIN
