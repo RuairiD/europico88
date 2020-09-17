@@ -168,20 +168,23 @@ function Ball:move(x, y)
             elseif collision.normal.y ~= 0 then
                 self.velY = self.velY * elasticity
             end
+        elseif collision.other:is(Player) then
+            -- TODO this is duplicated between Ball and Player; ideally we'd only need one.
+            self.controllingPlayer = collision.other
         end
     end
 end
 
-function Ball:pass(angle)
+function Ball:pass(velX, velY)
     self.controllingPlayer = nil
-    self.velX = Ball.PASS_SPEED * cos(angle)
-    self.velY = Ball.PASS_SPEED * sin(angle)
+    self.velX = Ball.PASS_SPEED * velX
+    self.velY = Ball.PASS_SPEED * velY
 end
 
-function Ball:shoot(angle)
+function Ball:shoot(velX, velY)
     self.controllingPlayer = nil
-    self.velX = Ball.SHOOT_SPEED * cos(angle)
-    self.velY = Ball.SHOOT_SPEED * sin(angle)
+    self.velX = Ball.SHOOT_SPEED * velX
+    self.velY = Ball.SHOOT_SPEED * velY
 end
 
 function Ball:draw()
@@ -196,12 +199,23 @@ Player.DIRECTION_DATA = {
     W = { spriteIndex = 32, xFlip = false, angle = 0.5, ballXOffset = -3, ballYOffset = 0 },
 }
 
-function Player:new(x, y)
-    self.x = x
-    self.y = y
+function Player:new(team, gridX, gridY, isGoalkeeper)
+    self.gridX = gridX
+    self.gridY = gridY
+    self.isGoalkeeper = isGoalkeeper
+    if self.isGoalkeeper then
+        -- TODO goalkeeper in goal
+        self.x = 32
+        self.y = 32
+    else
+        self.x = gridX * 6 * 8 - 22
+        self.y = gridY * 6 * 8 - 22
+    end
     self.isRunning = false
     self.direction = DIRECTIONS.S
     self.frame = 0
+    printh(self.x)
+    printh(self.y)
     bumpWorld:add(self, self.x, self.y, 5, 5)
 end
 
@@ -217,27 +231,35 @@ function Player:moveFilter(other)
 end
 
 function Player:updateActive()
+    -- TODO ball doesn't move if kicked while standing still
     self.isRunning = false
+    local velX, velY = 0, 0
     if btn(0) then
-        self.x = self.x - 1
         self.isRunning = true
         self.direction = DIRECTIONS.W
+        velX = -1
     elseif btn(1) then
-        self.x = self.x + 1
         self.isRunning = true
         self.direction = DIRECTIONS.E
+        velX = 1
     end
     if btn(2) then
-        self.y = self.y - 1
         self.isRunning = true
         self.direction = DIRECTIONS.N
+        velY = -1
     elseif btn(3) then
-        self.y = self.y + 1
         self.isRunning = true
         self.direction = DIRECTIONS.S
+        velY = 1
     end
 
-    self.x, self.y, collisions, _ = bumpWorld:move(self, self.x, self.y, self.moveFilter)
+    local magnitude = sqrt(velX * velX + velY * velY)
+    if magnitude > 1 then
+        velX = velX / magnitude
+        velY = velY / magnitude
+    end
+
+    self.x, self.y, collisions, _ = bumpWorld:move(self, self.x + velX, self.y + velY, self.moveFilter)
     for collision in all(collisions) do
         if collision.other:is(Ball) then
             collision.other.controllingPlayer = self
@@ -246,9 +268,9 @@ function Player:updateActive()
 
     if ball.controllingPlayer == self then
         if btnp(4) then
-            ball:pass(Player.DIRECTION_DATA[self.direction].angle)
+            ball:pass(velX, velY)
         elseif btnp(5) then
-            ball:shoot(Player.DIRECTION_DATA[self.direction].angle)
+            ball:shoot(velX, velY)
         else
             local xOffset = Player.DIRECTION_DATA[self.direction].ballXOffset
             local yOffset = Player.DIRECTION_DATA[self.direction].ballYOffset
@@ -279,7 +301,8 @@ Team = Object:extend()
 function Team:new(teamId)
     self.teamData = TEAMS[teamId]
     self.players = {
-        Player(16, 16, self.teamData.palette)
+        Player(self, 2, 1, false),
+        Player(self, 4, 1, false),
     }
     self.selectedPlayerIndex = 1
 end
@@ -290,6 +313,9 @@ function Team:update()
             player:updateActive()
         else
             player:updatePassive()
+        end
+        if ball.controllingPlayer == player then
+            self.selectedPlayerIndex = i
         end
     end
 end
@@ -354,6 +380,27 @@ function drawField()
         FIELD_HEIGHT * 8 - 1,
         7
     )
+    -- penalty spots
+    local xPenalty = (FIELD_WIDTH * 8 - 2)/2
+    rect(
+        xPenalty,
+        32,
+        xPenalty + 2,
+        33,
+        7
+    )
+    rect(
+        xPenalty,
+        FIELD_HEIGHT * 8 - 32,
+        xPenalty + 2,
+        FIELD_HEIGHT * 8 - 31,
+        7
+    )
+    -- Ds
+    clip(0, HEIGHT_18_YARD * 8 - cameraY, 128, (FIELD_HEIGHT - HEIGHT_18_YARD * 2) * 8)
+    circ(FIELD_WIDTH * 8 / 2, 0, 7 * 8, 7)
+    circ(FIELD_WIDTH * 8 / 2, FIELD_HEIGHT * 8, 7 * 8, 7)
+    clip()
     -- halfway line
     line(0, FIELD_HEIGHT * 8 / 2, FIELD_WIDTH * 8 - 1, FIELD_HEIGHT * 8 / 2, 7)
     circ(FIELD_WIDTH * 8 / 2, FIELD_HEIGHT * 8 / 2, 32, 7)
@@ -396,7 +443,12 @@ function _init()
         Wall((FIELD_WIDTH + FIELD_BUFFER) * 8, -FIELD_BUFFER * 8 - 8, 8, (FIELD_HEIGHT + FIELD_BUFFER * 2) * 8),
         Wall(-FIELD_BUFFER * 8 - 8, (FIELD_HEIGHT + FIELD_BUFFER) * 8, (FIELD_WIDTH + FIELD_BUFFER * 2) * 8, 8),
         GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, -20, GOAL_WIDTH * 8, 1),
-        GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, FIELD_HEIGHT * 8 + 12, GOAL_WIDTH * 8, 1),
+        GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, FIELD_HEIGHT * 8 + 8, GOAL_WIDTH * 8, 1),
+        --Side walls
+        GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, -20, 1, 20),
+        GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, FIELD_HEIGHT * 8, 1, 8),
+        GoalWall(8 * (GOAL_WIDTH + (FIELD_WIDTH - GOAL_WIDTH)/2), -20, 1, 20),
+        GoalWall(8 * (GOAL_WIDTH + (FIELD_WIDTH - GOAL_WIDTH)/2), FIELD_HEIGHT * 8, 1, 8),
     }
 end
 
@@ -407,11 +459,11 @@ end
 
 function _draw()
     cls()
+    cameraX, cameraY = ball.x - 63, ball.y - 63
     if ball.controllingPlayer then
-        camera(ball.controllingPlayer.x - 61, ball.controllingPlayer.y - 61)
-    else
-        camera(ball.x - 63, ball.y - 63)
+        cameraX, cameraY = ball.controllingPlayer.x - 61, ball.controllingPlayer.y - 61
     end
+    camera(cameraX, cameraY)
     drawField()
     drawTopGoal()
     ball:draw()
