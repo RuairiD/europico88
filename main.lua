@@ -190,6 +190,9 @@ function Ball:move(x, y)
             elseif collision.normal.y ~= 0 then
                 self.velY = self.velY * elasticity
             end
+        elseif collision.other:is(Player) and not self:isInvincible() and collision.other.ballLostTimer == 0 then
+            collision.other.ballLostTimer = Player.BALL_LOST_TIMER_MAX
+            self.controllingPlayer = collision.other
         end
     end
 end
@@ -214,7 +217,7 @@ function Ball:shoot(velX, velY)
 end
 
 function Ball:draw()
-    circfill(self.x + 1, self.y + 1, 1, 7)
+    circfill(self.x + 1, self.y + 1, 1.5, 7)
 end
 
 Player = Object:extend()
@@ -236,14 +239,18 @@ function Player:new(team, gridX, gridY, joypadId, isGoalkeeper)
     self.isGoalkeeper = isGoalkeeper
     
     self.ballLostTimer = 0
+    self.width = 7
+    self.height = 7
 
     if self.isGoalkeeper then
         -- TODO separate Goalkeeper class
+        self.width = 11
+        self.height = 11
         self.defendingHomeX = (FIELD_WIDTH * 8 - 8)/2
         if self.team.playingUp then
             self.defendingHomeY = FIELD_HEIGHT * 8 - 4
         else
-            self.defendingHomeY = -4
+            self.defendingHomeY = 4
         end
         self.attackingHomeX = self.defendingHomeX
         self.attackingHomeY = self.defendingHomeY
@@ -271,7 +278,8 @@ function Player:new(team, gridX, gridY, joypadId, isGoalkeeper)
         self.direction = DIRECTIONS.N
     end
     self.frame = 0
-    bumpWorld:add(self, self.x, self.y, 7, 7)
+
+    bumpWorld:add(self, self.x, self.y, self.width, self.height)
 end
 
 
@@ -375,14 +383,18 @@ function Player:updatePassive()
             end
             
             local targetX, targetY = self.x, self.y
+            local angleToBall = atan2(
+                self.x - ball.x,
+                self.y - ball.y
+            )
             if self.isDefending then
                 if self.isChasingBall then
                     -- Ball is close, go to ball!
                     targetX = ball.x
                     targetY = ball.y
                 else
-                    targetX = self.defendingHomeX
-                    targetY = self.defendingHomeY
+                    targetX = self.defendingHomeX - 16 * cos(angleToBall)
+                    targetY = self.defendingHomeY - 16 * sin(angleToBall)
                 end
             else
                 if ball.controllingPlayer == nil and self.isChasingBall then
@@ -390,8 +402,8 @@ function Player:updatePassive()
                     targetX = ball.x
                     targetY = ball.y
                 else
-                    targetX = self.attackingHomeX
-                    targetY = self.attackingHomeY
+                    targetX = self.attackingHomeX - 16 * cos(angleToBall)
+                    targetY = self.attackingHomeY - 16 * sin(angleToBall)
                 end
             end
 
@@ -422,6 +434,15 @@ end
 function Player:updateActive()
     self.isRunning = false
     local velX, velY = 0, 0
+    local goalY = 0
+    local goalX = FIELD_WIDTH * 8 / 2
+    if not self.team.playingUp then
+        goalY = FIELD_HEIGHT * 8
+    end
+    local angleToGoal = atan2(
+        self.x - goalX,
+        self.y - goalY
+    )
     if btn(0, self.joypadId) then
         self.isRunning = true
         self.direction = DIRECTIONS.W
@@ -452,7 +473,7 @@ function Player:updateActive()
         if btnp(4, self.joypadId) then
             ball:pass(velX, velY)
         elseif btnp(5, self.joypadId) then
-            ball:shoot(velX, velY)
+            ball:shoot(-cos(angleToGoal + rnd(0.1) - 0.05), -sin(angleToGoal + rnd(0.1) - 0.05))
         end
     end
 end
@@ -471,16 +492,21 @@ function Player:move(velX, velY)
     end
 
     -- Players are marginally faster closer to their own goal.
-    local speedScale = 0
-    if self.playingUp then
-        speedScale = self.y/(FIELD_HEIGHT * 8)
-    else
-        speedScale = 1 - self.y/(FIELD_HEIGHT * 8)
+    if ball.controllingPlayer == self then
+        velX = velX * 0.8
+        velY = velY * 0.8
     end
-    velX = velX * (1 + 0.1 *  speedScale)
-    velY = velY * (1 + 0.1 *  speedScale)
 
-    self.x, self.y, collisions, _ = bumpWorld:move(self, self.x + velX, self.y + velY, self.moveFilter)
+    local targetX, targetY = self.x + velX, self.y + velY
+    if self.isGoalkeeper then
+        if targetX < 8 * (FIELD_WIDTH - GOAL_WIDTH)/2 then
+            targetX = 8 * (FIELD_WIDTH - GOAL_WIDTH)/2
+        elseif targetX > 8 * (FIELD_WIDTH/2 + GOAL_WIDTH/2) - self.width then
+            targetX = 8 * (FIELD_WIDTH/2 + GOAL_WIDTH/2) - self.width 
+        end
+    end
+
+    self.x, self.y, collisions, _ = bumpWorld:move(self, targetX, targetY, self.moveFilter)
     for collision in all(collisions) do
         if collision.other:is(Ball) and not collision.other:isInvincible() and self.ballLostTimer == 0 then
             self.ballLostTimer = Player.BALL_LOST_TIMER_MAX
@@ -508,10 +534,31 @@ function Player:draw()
     spr(
         Player.DIRECTION_DATA[self.direction].spriteIndex + flr(self.frame / 4),
         self.x - 1,
-        self.y - 2,
+        self.y - 3,
         1, 1,
         Player.DIRECTION_DATA[self.direction].xFlip
     )
+end
+
+Goalkeeper = Player:extend()
+
+Goalkeeper.PALETTE = {
+    -- Shirt
+    [10] = 2,
+    -- Shorts
+    [12] = 0,
+}
+
+function Goalkeeper:draw()
+    setPalette(Goalkeeper.PALETTE)
+    spr(
+        Player.DIRECTION_DATA[self.direction].spriteIndex + flr(self.frame / 4),
+        self.x,
+        self.y + 1,
+        1, 1,
+        Player.DIRECTION_DATA[self.direction].xFlip
+    )
+    setPalette(self.team.teamData.palette)
 end
 
 Team = Object:extend()
@@ -523,13 +570,13 @@ function Team:new(teamId, joypadId, playingUp)
     self.joypadId = joypadId
     self.players = {
         -- GK
-        Player(self, 1, 1, joypadId, true),
+        Goalkeeper(self, 1, 1, joypadId, true),
         -- Defence
         Player(self, 1, 2, joypadId, false),
         Player(self, 2, 1, joypadId, false),
         Player(self, 3, 1, joypadId, false),
         Player(self, 4, 2, joypadId, false),
-        -- -- Midfield
+        -- Midfield
         Player(self, 1, 4, joypadId, false),
         Player(self, 2, 2, joypadId, false),
         Player(self, 3, 3, joypadId, false),
@@ -586,13 +633,14 @@ function Team:update()
     self.players[self:findPlayerClosestToBall()].isChasingBall = true
 end
 
+Team.CURSOR_COLORS = { 8, 12 }
 function Team:draw()
     setPalette(self.teamData.palette)
     for i, player in ipairs(self.players) do
-        player:draw()
         if self.joypadId ~= nil and i == self.selectedPlayerIndex then
-            rect(player.x, player.y, player.x + 6, player.y + 6, 15)
+            circ(player.x + 3, player.y + 4, 4, Team.CURSOR_COLORS[self.joypadId + 1])
         end
+        player:draw()
     end
     resetPalette()
 end
@@ -611,7 +659,7 @@ function drawField()
         rectfill(
             -FIELD_BUFFER * 8,
             y * 8,
-            8 * (FIELD_WIDTH + FIELD_BUFFER - 1),
+            8 * (FIELD_WIDTH + 2 * FIELD_BUFFER),
             (y + FIELD_STRIPE_HEIGHT) * 8 - 1,
             FIELD_COLORS[flr(y/2) % 2 + 1]
         )
@@ -673,6 +721,18 @@ function drawField()
     -- halfway line
     line(0, FIELD_HEIGHT * 8 / 2, FIELD_WIDTH * 8 - 1, FIELD_HEIGHT * 8 / 2, 7)
     circ(FIELD_WIDTH * 8 / 2, FIELD_HEIGHT * 8 / 2, 32, 7)
+    -- stands
+    -- north
+    setPalette(teams[1].teamData.palette)
+    map(0, 0, - 8 * (3 * FIELD_BUFFER), - 8 * FIELD_BUFFER - 8 * 8, 48, 8)
+    map(48, 0, - 8 * FIELD_BUFFER - 8 * 8,  - 8 * FIELD_BUFFER, 8, 28)
+    map(48, 0, 8 * (FIELD_WIDTH + FIELD_BUFFER),  - 8 * FIELD_BUFFER, 8, 28)
+    -- south
+    setPalette(teams[2].teamData.palette)
+    map(0, 8, - 8 * (3 * FIELD_BUFFER), 8 * (FIELD_HEIGHT + FIELD_BUFFER), 48, 8)
+    map(56, 0, - 8 * FIELD_BUFFER - 8 * 8, 8 * FIELD_HEIGHT/2, 8, 28)
+    map(56, 0, 8 * (FIELD_WIDTH + FIELD_BUFFER), 8 * FIELD_HEIGHT/2, 8, 28)
+    resetPalette()
 end
 
 function drawTopGoal()
@@ -693,14 +753,17 @@ function drawBottomGoal()
     fillp()
 end
 
-GOAL_TIMER_MAX = 300
+GOAL_TIMER_MAX = 240
 BALL_OUT_TIMER_MAX = 180
+HALF_LENGTH = 120
+GAME_TIME_SCALE = 45 * 60
+HALF_TIME_TIMER_MAX = 300
 function _init()
     bumpWorld = bump.newWorld(8)
     resetPalette()
     teams = {
-        Team('SCO', nil, false),
-        Team('SWE', nil, true),
+        Team('GER', 0, false),
+        Team('DEN', nil, true),
     }
     ball = Ball(FIELD_WIDTH * 8 /2, FIELD_HEIGHT * 8 /2)
     fieldLines = {
@@ -709,8 +772,8 @@ function _init()
         FieldLine(0, FIELD_HEIGHT * 8, FIELD_WIDTH * 8, 1),
         FieldLine(FIELD_WIDTH * 8, 0, 1, FIELD_HEIGHT * 8),
         -- Goal lines are slightly behind the field lines
-        FieldLine(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, -2, GOAL_WIDTH * 8, 1, true, teams[2]),
-        FieldLine(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, FIELD_HEIGHT * 8 + 2, GOAL_WIDTH * 8, 1, true, teams[1]),
+        FieldLine(8 * (FIELD_WIDTH - GOAL_WIDTH)/2 + 2, -2, GOAL_WIDTH * 8 - 4, 1, true, teams[2]),
+        FieldLine(8 * (FIELD_WIDTH - GOAL_WIDTH)/2 + 2, FIELD_HEIGHT * 8 + 2, GOAL_WIDTH * 8 - 4, 1, true, teams[1]),
     }
     perimeterWalls = {
         Wall(-FIELD_BUFFER * 8 - 8, -FIELD_BUFFER * 8 - 8, (FIELD_WIDTH + FIELD_BUFFER * 2) * 8, 8),
@@ -727,11 +790,17 @@ function _init()
     }
     goalTimer = 0
     ballOutTimer = 0
+    gameTimer = 0
+    halfTimeTimer = 0
 end
 
 function _update60()
-    if goalTimer == 0 and ballOutTimer == 0 then
+    if goalTimer == 0 and ballOutTimer == 0 and halfTimeTimer == 0 then
         for team in all(teams) do team:update() end
+        gameTimer = gameTimer + 1
+        if gameTimer == HALF_LENGTH * 60 then
+            halfTimeTimer = HALF_TIME_TIMER_MAX
+        end
     end
 
     if goalTimer > 0 then
@@ -745,6 +814,13 @@ function _update60()
     if ballOutTimer > 0 then
         ballOutTimer = ballOutTimer - 1
         if ballOutTimer == 0 then
+            ball:setPosition(FIELD_WIDTH * 8 /2, FIELD_HEIGHT * 8 /2)
+        end
+    end
+
+    if halfTimeTimer > 0 then
+        halfTimeTimer = halfTimeTimer - 1
+        if halfTimeTimer == 0 then
             ball:setPosition(FIELD_WIDTH * 8 /2, FIELD_HEIGHT * 8 /2)
         end
     end
@@ -775,8 +851,26 @@ function _draw()
         print(team.teamId.." "..tostr(team.goals), 8, i * 8 + 1, 0)
         print(team.teamId.." "..tostr(team.goals), 8, i * 8, 7)
     end
+    local scaledGameTimer = (gameTimer / (60 * HALF_LENGTH)) * GAME_TIME_SCALE
+    local mins = tostr(flr(scaledGameTimer / 60))
+    local secs = tostr(flr(scaledGameTimer % 60))
+    if #mins < 2 then
+        mins = '0'..mins
+    end
+    if #secs < 2 then
+        secs = '0'..secs
+    end
+    print(mins..':'..secs, 8, 25, 0)
+    print(mins..':'..secs, 8, 24, 7)
     if goalTimer > 0 then
         print('goal!', 54, 60, flr(rnd(16)))
+    end
+
+    if halfTimeTimer > 0 then
+        fillp('0b0101101001011010.1')
+        rectfill(0, 0, 127, 127, 0)
+        fillp()
+        print('half time', 46, 60, 7)
     end
 end
 -- END MAIN
