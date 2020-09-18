@@ -137,6 +137,7 @@ function Ball:new(x, y)
     self.velX = 0
     self.velY = 0
     self.controllingPlayer = nil
+    self.lastControllingPlayer = nil
     self.shootTimer = 0
     bumpWorld:add(self, self.x, self.y, 2, 2)
 end
@@ -152,6 +153,7 @@ function Ball:update()
     if self.controllingPlayer then
         self.velX = 0
         self.velY = 0
+        self.lastControllingPlayer = self.controllingPlayer
     end
     self.velX = self.velX * Ball.FRICTION
     self.velY = self.velY * Ball.FRICTION
@@ -177,6 +179,7 @@ function Ball:move(x, y)
             if collision.other.isGoal and goalTimer == 0 then
                 goalTimer = GOAL_TIMER_MAX
                 collision.other.attackingTeam.goals = collision.other.attackingTeam.goals + 1
+                goalScoringTeam = collision.other.attackingTeam
             elseif ballOutTimer == 0 then
                 ballOutTimer = BALL_OUT_TIMER_MAX
             end
@@ -192,17 +195,9 @@ function Ball:move(x, y)
             end
         elseif
             collision.other:is(Player) and
-            not self:isInvincible() and
-            collision.other.ballLostTimer == 0 and
-            -- based on the speed of the ball, there's a chance the ball just passes straight through
-            -- too hot to handle!
-            rnd(self:getSpeed()) < 1
+            collision.other:canTakeBall(self)
         then
-            -- If player has been tackled, get a time penalty (prevents ball pinging around)
-            if self.controllingPlayer and self.controllingPlayer ~= collision.other then
-                self.controllingPlayer.ballLostTimer = Player.BALL_LOST_TIMER_MAX
-            end
-            self.controllingPlayer = collision.other
+            collision.other:takeBall(self)
         end
     end
 end
@@ -247,7 +242,9 @@ Player.DIRECTION_DATA = {
 -- If player loses the ball by tackle, they can't reclaim it for a short period.
 -- Prevents players trading the ball over and over.
 Player.BALL_LOST_TIMER_MAX = 60
-Player.BALL_LOST_BY_KICKING_TIMER_MAX = 5
+Player.BALL_LOST_BY_KICKING_TIMER_MAX = 15
+-- Computer will delay after receiving ball before attempting a pass or shot.
+Player.BALL_RECEIVED_TIMER_MAX = 30
 
 function Player:new(team, gridX, gridY, joypadId, isGoalkeeper)
     self.team = team
@@ -257,9 +254,26 @@ function Player:new(team, gridX, gridY, joypadId, isGoalkeeper)
     self.isGoalkeeper = isGoalkeeper
     
     self.ballLostTimer = 0
+    self.ballReceivedTimer = 0
     self.width = 7
     self.height = 7
+    bumpWorld:add(self, 0, 0, self.width, self.height)
 
+    self:resetPosition()
+
+    self.isRunning = false
+    self.direction = DIRECTIONS.S
+    self.isDefending = true
+    -- chosen by Team
+    self.isChasingBall = false
+    if team.playingUp then
+        self.direction = DIRECTIONS.N
+    end
+    self.frame = 0
+
+end
+
+function Player:resetPosition()
     if self.isGoalkeeper then
         -- TODO separate Goalkeeper class
         self.width = 9
@@ -274,36 +288,27 @@ function Player:new(team, gridX, gridY, joypadId, isGoalkeeper)
         self.attackingHomeY = self.defendingHomeY
     else
         if self.team.playingUp then
-            self.defendingHomeX = (5 - gridX) * 6 * 8 - 22
-            self.defendingHomeY = (9 - gridY) * 6 * 8 - 22
+            self.defendingHomeX = (5 - self.gridX) * 6 * 8 - 22
+            self.defendingHomeY = (9 - self.gridY) * 6 * 8 - 22
             self.attackingHomeX = self.defendingHomeX
             self.attackingHomeY = self.defendingHomeY - 15 * 8
         else
-            self.defendingHomeX = gridX * 6 * 8 - 22
-            self.defendingHomeY = gridY * 6 * 8 - 22
+            self.defendingHomeX = self.gridX * 6 * 8 - 22
+            self.defendingHomeY = self.gridY * 6 * 8 - 22
             self.attackingHomeX = self.defendingHomeX
             self.attackingHomeY = self.defendingHomeY + 15 * 8
         end
     end
     self.x = self.defendingHomeX
     self.y = self.defendingHomeY
-    self.isRunning = false
-    self.direction = DIRECTIONS.S
-    self.isDefending = true
-    -- chosen by Team
-    self.isChasingBall = false
-    if team.playingUp then
-        self.direction = DIRECTIONS.N
-    end
-    self.frame = 0
-
-    bumpWorld:add(self, self.x, self.y, self.width, self.height)
+    bumpWorld:update(self, self.x, self.y, self.width, self.height)
 end
-
 
 function Player:moveFilter(other)
     if other:is(Wall) then
         return 'slide'
+    elseif other:is(Player) then
+        return nil
     end
     return 'cross'
 end
@@ -344,92 +349,118 @@ end
 
 function Player:updatePassive()
     local velX, velY = 0, 0
+    local centreX, centreY = self.x + 2, self.y + 2
     local goalY = 0
     local goalX = FIELD_WIDTH * 8 / 2
     if not self.team.playingUp then
         goalY = FIELD_HEIGHT * 8
     end
-    local distanceToGoal = getDistance(self.x, self.y, goalX, goalY)
+    local distanceToGoal = getDistance(centreX, centreY + 2, goalX, goalY)
     local angleToGoal = atan2(
-        self.x - goalX,
-        self.y - goalY
+        centreX - goalX,
+        centreY - goalY
     )
     
-    if self.isGoalkeeper then
-        if ball.controllingPlayer == self then
-            -- lump it clear
-            ball:shoot(-cos(angleToGoal + rnd(0.4) - 0.2), -sin(angleToGoal + rnd(0.4) - 0.2))
+    if goalTimer == 0 then
+        if self.isGoalkeeper then
+            if ball.controllingPlayer == self then
+                -- lump it clear
+                ball:shoot(-cos(angleToGoal + rnd(0.3) - 0.15), -sin(angleToGoal + rnd(0.3) - 0.15))
+            else
+                velX = ball.x - self.x
+            end
         else
-            velX = ball.x - self.x
+            if ball.controllingPlayer == self then
+                -- Check for shooting opportunity
+                if self.ballReceivedTimer == 0 and distanceToGoal < 128 and rnd(distanceToGoal) > 16 then
+                    ball:shoot(-cos(angleToGoal + rnd(0.1) - 0.05), -sin(angleToGoal + rnd(0.1) - 0.05))
+                else
+                    -- Check for pass
+                    local closestOpposingPlayer, distance = self:findClosestPlayer(
+                        false
+                    )
+                    local angleToPlayer = atan2(
+                        centreX - closestOpposingPlayer.x,
+                        centreY - closestOpposingPlayer.y
+                    )
+                    if self.ballReceivedTimer == 0 and distance < 32 and ((angleToGoal - angleToPlayer + 0.5) % 1 - 0.5) < 0.2 then
+                        -- get closed down, pass
+                        local closestSameTeamPlayer, _ = self:findClosestPlayer(
+                            true
+                        )
+                        local passAngle = atan2(
+                            centreX - closestSameTeamPlayer.x,
+                            centreY - closestSameTeamPlayer.y
+                        ) + rnd(0.1) - 0.05
+                        ball:pass(-cos(passAngle), -sin(passAngle))
+                    end
+                end
+                velY = -sin(angleToGoal)
+                velX = -cos(angleToGoal)
+            else
+                -- Move towards defending or attacking position.
+                if ball.controllingPlayer ~= nil then
+                    if ball.controllingPlayer.team == self.team then
+                        self.isDefending = false
+                    else
+                        self.isDefending = true
+                    end
+                end
+                
+                local targetX, targetY = self.x, self.y
+                local angleToBall = atan2(
+                    centreX - ball.x,
+                    centreY - ball.y
+                )
+                if self.isDefending then
+                    if self.isChasingBall then
+                        -- Ball is close, go to ball!
+                        targetX = ball.x
+                        targetY = ball.y
+                    else
+                        targetX = self.defendingHomeX - 16 * cos(angleToBall)
+                        targetY = self.defendingHomeY - 16 * sin(angleToBall)
+                    end
+                else
+                    if ball.controllingPlayer == nil and self.isChasingBall then
+                        -- Ball is close, go to ball!
+                        targetX = ball.x
+                        targetY = ball.y
+                    else
+                        targetX = self.attackingHomeX - 16 * cos(angleToBall)
+                        targetY = self.attackingHomeY - 16 * sin(angleToBall)
+                    end
+                end
+
+                -- move() will scale this properly
+                velX = targetX - centreX
+                velY = targetY - centreY
+            end
+            self.isRunning = true
         end
     else
-        if ball.controllingPlayer == self then
-            -- Check for shooting opportunity
-            if distanceToGoal < 128 and rnd(distanceToGoal) > 16 then
-                ball:shoot(-cos(angleToGoal + rnd(0.2) - 0.1), -sin(angleToGoal + rnd(0.2) - 0.1))
+        -- Goal scored. Run towards scorer!
+        self.isRunning = false
+        if goalScoringTeam == self.team then
+            if ball.lastControllingPlayer ~= self then
+                velX = (ball.lastControllingPlayer.x + rnd(8) - 4) - self.x
+                velY = (ball.lastControllingPlayer.y + rnd(8) - 4) - self.y
+                self.isRunning = true
             else
-                -- Check for pass
-                local closestOpposingPlayer, distance = self:findClosestPlayer(
-                    false
-                )
-                local angleToPlayer = atan2(
-                    self.x - closestOpposingPlayer.x,
-                    self.y - closestOpposingPlayer.y
-                )
-                if distance < 32 and ((angleToGoal - angleToPlayer + 0.5) % 1 - 0.5) < 0.2 then
-                    -- get closed down, pass
-                    local closestSameTeamPlayer, _ = self:findClosestPlayer(
-                        true
-                    )
-                    local passAngle = atan2(
-                        self.x - closestSameTeamPlayer.x,
-                        self.y - closestSameTeamPlayer.y
-                    ) + rnd(0.1) - 0.05
-                    ball:pass(-cos(passAngle), -sin(passAngle))
+                -- Run to nearest corner!
+                local targetX = 0
+                local targetY = 0
+                if self.x > (FIELD_WIDTH * 8) / 2 then
+                    targetX = FIELD_WIDTH * 8
                 end
+                if self.y > (FIELD_HEIGHT * 8) / 2 then
+                    targetY = FIELD_HEIGHT * 8
+                end
+                velX = targetX - self.x
+                velY = targetY - self.y
+                self.isRunning = true
             end
-            velY = -sin(angleToGoal)
-            velX = -cos(angleToGoal)
-        else
-            -- Move towards defending or attacking position.
-            if ball.controllingPlayer ~= nil then
-                if ball.controllingPlayer.team == self.team then
-                    self.isDefending = false
-                else
-                    self.isDefending = true
-                end
-            end
-            
-            local targetX, targetY = self.x, self.y
-            local angleToBall = atan2(
-                self.x - ball.x,
-                self.y - ball.y
-            )
-            if self.isDefending then
-                if self.isChasingBall then
-                    -- Ball is close, go to ball!
-                    targetX = ball.x
-                    targetY = ball.y
-                else
-                    targetX = self.defendingHomeX - 16 * cos(angleToBall)
-                    targetY = self.defendingHomeY - 16 * sin(angleToBall)
-                end
-            else
-                if ball.controllingPlayer == nil and self.isChasingBall then
-                    -- Ball is close, go to ball!
-                    targetX = ball.x
-                    targetY = ball.y
-                else
-                    targetX = self.attackingHomeX - 16 * cos(angleToBall)
-                    targetY = self.attackingHomeY - 16 * sin(angleToBall)
-                end
-            end
-
-            -- move() will scale this properly
-            velX = targetX - self.x
-            velY = targetY - self.y
         end
-        self.isRunning = true
     end
 
     if abs(velX) > abs(velY) then
@@ -534,16 +565,9 @@ function Player:move(velX, velY)
     for collision in all(collisions) do
         if
             collision.other:is(Ball) and
-            not collision.other:isInvincible() and
-            self.ballLostTimer == 0 and
-            -- based on the speed of the ball, there's a chance the ball just passes straight through
-            -- too hot to handle!
-            rnd(collision.other:getSpeed()) < 1
+            self:canTakeBall(collision.other)
         then
-            if collision.other.controllingPlayer and collision.other.controllingPlayer ~= self then
-                collision.other.controllingPlayer.ballLostTimer = Player.BALL_LOST_TIMER_MAX
-            end
-            collision.other.controllingPlayer = self
+            self:takeBall(collision.other)
         end
     end
 
@@ -555,12 +579,35 @@ function Player:move(velX, velY)
         self.ballLostTimer = self.ballLostTimer - 1
     end
 
+    if self.ballReceivedTimer > 0 then
+        self.ballReceivedTimer = self.ballReceivedTimer - 1
+    end
+
     if self.isRunning then
         self.frame = self.frame + 1
     else
         self.frame = 0
     end
     self.frame = self.frame % 16
+end
+
+function Player:canTakeBall(ball)
+    return (
+        goalTimer == 0 and
+        not ball:isInvincible() and
+        self.ballLostTimer == 0 and
+        -- based on the speed of the ball, there's a chance the ball just passes straight through
+        -- too hot to handle!
+        rnd(ball:getSpeed()) < 1
+    )
+end
+
+function Player:takeBall(ball)
+    if ball.controllingPlayer and ball.controllingPlayer ~= self then
+        ball.controllingPlayer.ballLostTimer = Player.BALL_LOST_TIMER_MAX
+    end
+    ball.controllingPlayer = self
+    self.ballReceivedTimer = Player.BALL_RECEIVED_TIMER_MAX
 end
 
 function Player:draw()
@@ -584,7 +631,6 @@ Goalkeeper.PALETTE = {
 
 function Goalkeeper:draw()
     setPalette(Goalkeeper.PALETTE)
-    rect(self.x, self.y, self.x + self.width - 1, self.y + self.height - 1, 10)
     spr(
         Player.DIRECTION_DATA[self.direction].spriteIndex + flr(self.frame / 4),
         self.x,
@@ -605,22 +651,28 @@ function Team:new(teamId, joypadId, playingUp)
     self.players = {
         -- GK
         Goalkeeper(self, 1, 1, joypadId, true),
-        -- -- Defence
-        -- Player(self, 1, 2, joypadId, false),
-        -- Player(self, 2, 1, joypadId, false),
-        -- Player(self, 3, 1, joypadId, false),
-        -- Player(self, 4, 2, joypadId, false),
-        -- -- Midfield
-        -- Player(self, 1, 4, joypadId, false),
-        -- Player(self, 2, 2, joypadId, false),
-        -- Player(self, 3, 3, joypadId, false),
-        -- Player(self, 4, 4, joypadId, false),
-        -- -- Forwards
-        -- Player(self, 2, 5, joypadId, false),
+        -- Defence
+        Player(self, 1, 2, joypadId, false),
+        Player(self, 2, 1, joypadId, false),
+        Player(self, 3, 1, joypadId, false),
+        Player(self, 4, 2, joypadId, false),
+        -- Midfield
+        Player(self, 1, 4, joypadId, false),
+        Player(self, 2, 2, joypadId, false),
+        Player(self, 3, 3, joypadId, false),
+        Player(self, 4, 4, joypadId, false),
+        -- Forwards
+        Player(self, 2, 5, joypadId, false),
         Player(self, 3, 5, joypadId, false),
     }
     self.selectedPlayerIndex = 1
     self.goals = 0
+end
+
+function Team:resetPosition()
+    for player in all(self.players) do
+        player:resetPosition()
+    end
 end
 
 function Team:findPlayerClosestToBall(excludePlayerId)
@@ -674,7 +726,9 @@ function Team:draw()
     setPalette(self.teamData.palette)
     for i, player in ipairs(self.players) do
         if self.joypadId ~= nil and i == self.selectedPlayerIndex then
+            resetPalette()
             circ(player.x + 3, player.y + 4, 4, Team.CURSOR_COLORS[self.joypadId + 1])
+            setPalette(self.teamData.palette)
         end
         player:draw()
     end
@@ -774,6 +828,9 @@ end
 function drawTopGoal()
     -- goals
     local goalX = (FIELD_WIDTH - GOAL_WIDTH)/2
+    fillp('0b0101101001011010.1')
+    rectfill(goalX * 8, -12, (goalX + GOAL_WIDTH) * 8 - 1, 0, 3)
+    fillp()
     rect(goalX * 8, -12, (goalX + GOAL_WIDTH) * 8 - 1, 0, 7)
     fillp('0b0101101001011010.1')
     rectfill(goalX * 8, -20, (goalX + GOAL_WIDTH) * 8 - 1, -13, 5)
@@ -791,15 +848,15 @@ end
 
 GOAL_TIMER_MAX = 240
 BALL_OUT_TIMER_MAX = 180
-HALF_LENGTH = 120
+HALF_LENGTH = 180
 GAME_TIME_SCALE = 45 * 60
 HALF_TIME_TIMER_MAX = 300
 function _init()
     bumpWorld = bump.newWorld(8)
     resetPalette()
     teams = {
-        Team('GER', 0, false),
-        Team('DEN', 1, true),
+        Team('ENG', 0, false),
+        Team('NED', 1, true),
     }
     ball = Ball(FIELD_WIDTH * 8 /2, FIELD_HEIGHT * 8 /2)
     fieldLines = {
@@ -857,12 +914,29 @@ function _init()
     halfTimeTimer = 0
 end
 
+function isFullTime()
+    return gameTimer >= 2 * HALF_LENGTH * 60
+end
+
+function resetKickOff()
+    ball:setPosition(FIELD_WIDTH * 8 /2, FIELD_HEIGHT * 8 /2)
+    for team in all(teams) do
+        team:resetPosition()
+    end
+end
+
 function _update60()
-    if goalTimer == 0 and ballOutTimer == 0 and halfTimeTimer == 0 then
+    if
+        ballOutTimer == 0 and
+        halfTimeTimer == 0 and
+        not isFullTime()
+    then
         for team in all(teams) do team:update() end
-        gameTimer = gameTimer + 1
-        if gameTimer == HALF_LENGTH * 60 then
-            halfTimeTimer = HALF_TIME_TIMER_MAX
+        if goalTimer == 0 then
+            gameTimer = gameTimer + 1
+            if gameTimer == HALF_LENGTH * 60 then
+                halfTimeTimer = HALF_TIME_TIMER_MAX
+            end
         end
     end
 
@@ -870,46 +944,36 @@ function _update60()
         ballOutTimer = 0
         goalTimer = goalTimer - 1
         if goalTimer == 0 then
-            ball:setPosition(FIELD_WIDTH * 8 /2, FIELD_HEIGHT * 8 /2)
+            resetKickOff()
         end
     end
 
     if ballOutTimer > 0 then
         ballOutTimer = ballOutTimer - 1
         if ballOutTimer == 0 then
-            ball:setPosition(FIELD_WIDTH * 8 /2, FIELD_HEIGHT * 8 /2)
+            resetKickOff()
         end
     end
 
     if halfTimeTimer > 0 then
         halfTimeTimer = halfTimeTimer - 1
         if halfTimeTimer == 0 then
-            ball:setPosition(FIELD_WIDTH * 8 /2, FIELD_HEIGHT * 8 /2)
+            for team in all(teams) do
+                -- Change ends!
+                team.playingUp = not team.playingUp
+                fieldLines[7].attackingTeam = teams[1]
+                fieldLines[8].attackingTeam = teams[2]
+            end
+            resetKickOff()
         end
     end
 
-    ball:update()
+    if halfTimeTimer == 0 and not isFullTime() then
+        ball:update()
+    end
 end
 
-function _draw()
-    cls()
-    cameraTargetX, cameraTargetY = ball.x - 63, ball.y - 63
-    if ball.controllingPlayer then
-        cameraTargetX, cameraTargetY = ball.controllingPlayer.x - 61, ball.controllingPlayer.y - 61
-    end
-    if not cameraX or not cameraY then
-        cameraX, cameraY = cameraTargetX, cameraTargetY
-    else
-        cameraX = cameraX + (cameraTargetX - cameraX)/8
-        cameraY = cameraY + (cameraTargetY - cameraY)/8
-    end
-    camera(cameraX, cameraY)
-    drawField()
-    drawTopGoal()
-    ball:draw()
-    for team in all(teams) do team:draw() end
-    drawBottomGoal()
-    camera()
+function drawScoreDisplay()
     for i, team in ipairs(teams) do
         print(team.teamId.." "..tostr(team.goals), 8, i * 8 + 1, 0)
         print(team.teamId.." "..tostr(team.goals), 8, i * 8, 7)
@@ -925,15 +989,46 @@ function _draw()
     end
     print(mins..':'..secs, 8, 25, 0)
     print(mins..':'..secs, 8, 24, 7)
+end
+
+function _draw()
+    cls()
+    cameraTargetX, cameraTargetY = ball.x - 63, ball.y - 63
+    if goalTimer > 0 and ball.lastControllingPlayer then
+        cameraTargetX, cameraTargetY = ball.lastControllingPlayer.x - 61, ball.lastControllingPlayer.y - 61
+    elseif ball.controllingPlayer then
+        cameraTargetX, cameraTargetY = ball.controllingPlayer.x - 61, ball.controllingPlayer.y - 61
+    end
+    if not cameraX or not cameraY then
+        cameraX, cameraY = cameraTargetX, cameraTargetY
+    else
+        cameraX = cameraX + (cameraTargetX - cameraX)/8
+        cameraY = cameraY + (cameraTargetY - cameraY)/8
+    end
+    camera(cameraX, cameraY)
+    drawField()
+    drawTopGoal()
+    ball:draw()
+    for team in all(teams) do team:draw() end
+    drawBottomGoal()
+    camera()
+
     if goalTimer > 0 then
         print('goal!', 54, 60, flr(rnd(16)))
     end
 
-    if halfTimeTimer > 0 then
+    if halfTimeTimer > 0 or isFullTime() then
         fillp('0b0101101001011010.1')
         rectfill(0, 0, 127, 127, 0)
         fillp()
-        print('half time', 46, 60, 7)
+        rectfill(40, 57, 87, 67, 0)
+        if isFullTime() then
+            print('full time', 46, 60, 7)
+        else
+            print('half time', 46, 60, 7)
+        end
     end
+
+    drawScoreDisplay()
 end
 -- END MAIN
