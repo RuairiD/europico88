@@ -190,26 +190,43 @@ function Ball:move(x, y)
             elseif collision.normal.y ~= 0 then
                 self.velY = self.velY * elasticity
             end
-        elseif collision.other:is(Player) and not self:isInvincible() and collision.other.ballLostTimer == 0 then
-            collision.other.ballLostTimer = Player.BALL_LOST_TIMER_MAX
+        elseif
+            collision.other:is(Player) and
+            not self:isInvincible() and
+            collision.other.ballLostTimer == 0 and
+            -- based on the speed of the ball, there's a chance the ball just passes straight through
+            -- too hot to handle!
+            rnd(self:getSpeed()) < 1
+        then
+            -- If player has been tackled, get a time penalty (prevents ball pinging around)
+            if self.controllingPlayer and self.controllingPlayer ~= collision.other then
+                self.controllingPlayer.ballLostTimer = Player.BALL_LOST_TIMER_MAX
+            end
             self.controllingPlayer = collision.other
         end
     end
+end
+
+function Ball:getSpeed()
+    return sqrt(self.velX * self.velX + self.velY * self.velY)
 end
 
 function Ball:setPosition(x, y)
     self.x = x
     self.y = y
     bumpWorld:update(self, self.x, self.y, 2, 2)
+    self.controllingPlayer = nil
 end
 
 function Ball:pass(velX, velY)
+    self.controllingPlayer.ballLostTimer = Player.BALL_LOST_BY_KICKING_TIMER_MAX
     self.controllingPlayer = nil
     self.velX = Ball.PASS_SPEED * velX
     self.velY = Ball.PASS_SPEED * velY
 end
 
 function Ball:shoot(velX, velY)
+    self.controllingPlayer.ballLostTimer = Player.BALL_LOST_BY_KICKING_TIMER_MAX
     self.shootTimer = Ball.SHOOT_TIMER_MAX
     self.controllingPlayer = nil
     self.velX = Ball.SHOOT_SPEED * velX
@@ -227,9 +244,10 @@ Player.DIRECTION_DATA = {
     E = { spriteIndex = 32, xFlip = true, velX = 1, velY = 0, ballXOffset = 8, ballYOffset = 0 },
     W = { spriteIndex = 32, xFlip = false, velX = -1, velY = 0, ballXOffset = -3, ballYOffset = 0 },
 }
--- If player loses the ball, they can't reclaim it for a short period
--- prevents players trading the ball over and over.
+-- If player loses the ball by tackle, they can't reclaim it for a short period.
+-- Prevents players trading the ball over and over.
 Player.BALL_LOST_TIMER_MAX = 60
+Player.BALL_LOST_BY_KICKING_TIMER_MAX = 5
 
 function Player:new(team, gridX, gridY, joypadId, isGoalkeeper)
     self.team = team
@@ -244,13 +262,13 @@ function Player:new(team, gridX, gridY, joypadId, isGoalkeeper)
 
     if self.isGoalkeeper then
         -- TODO separate Goalkeeper class
-        self.width = 11
-        self.height = 11
+        self.width = 9
+        self.height = 9
         self.defendingHomeX = (FIELD_WIDTH * 8 - 8)/2
         if self.team.playingUp then
-            self.defendingHomeY = FIELD_HEIGHT * 8 - 4
+            self.defendingHomeY = FIELD_HEIGHT * 8 - 8
         else
-            self.defendingHomeY = 4
+            self.defendingHomeY = 0
         end
         self.attackingHomeX = self.defendingHomeX
         self.attackingHomeY = self.defendingHomeY
@@ -497,6 +515,12 @@ function Player:move(velX, velY)
         velY = velY * 0.8
     end
 
+    -- Goalkeepers move slightly slower so they're less superhuman
+    if isGoalkeeper then
+        velX = velX * 0.8
+        velY = velY * 0.8
+    end
+
     local targetX, targetY = self.x + velX, self.y + velY
     if self.isGoalkeeper then
         if targetX < 8 * (FIELD_WIDTH - GOAL_WIDTH)/2 then
@@ -508,8 +532,17 @@ function Player:move(velX, velY)
 
     self.x, self.y, collisions, _ = bumpWorld:move(self, targetX, targetY, self.moveFilter)
     for collision in all(collisions) do
-        if collision.other:is(Ball) and not collision.other:isInvincible() and self.ballLostTimer == 0 then
-            self.ballLostTimer = Player.BALL_LOST_TIMER_MAX
+        if
+            collision.other:is(Ball) and
+            not collision.other:isInvincible() and
+            self.ballLostTimer == 0 and
+            -- based on the speed of the ball, there's a chance the ball just passes straight through
+            -- too hot to handle!
+            rnd(collision.other:getSpeed()) < 1
+        then
+            if collision.other.controllingPlayer and collision.other.controllingPlayer ~= self then
+                collision.other.controllingPlayer.ballLostTimer = Player.BALL_LOST_TIMER_MAX
+            end
             collision.other.controllingPlayer = self
         end
     end
@@ -551,10 +584,11 @@ Goalkeeper.PALETTE = {
 
 function Goalkeeper:draw()
     setPalette(Goalkeeper.PALETTE)
+    rect(self.x, self.y, self.x + self.width - 1, self.y + self.height - 1, 10)
     spr(
         Player.DIRECTION_DATA[self.direction].spriteIndex + flr(self.frame / 4),
         self.x,
-        self.y + 1,
+        self.y - 1,
         1, 1,
         Player.DIRECTION_DATA[self.direction].xFlip
     )
@@ -571,18 +605,18 @@ function Team:new(teamId, joypadId, playingUp)
     self.players = {
         -- GK
         Goalkeeper(self, 1, 1, joypadId, true),
-        -- Defence
-        Player(self, 1, 2, joypadId, false),
-        Player(self, 2, 1, joypadId, false),
-        Player(self, 3, 1, joypadId, false),
-        Player(self, 4, 2, joypadId, false),
-        -- Midfield
-        Player(self, 1, 4, joypadId, false),
-        Player(self, 2, 2, joypadId, false),
-        Player(self, 3, 3, joypadId, false),
-        Player(self, 4, 4, joypadId, false),
-        -- Forwards
-        Player(self, 2, 5, joypadId, false),
+        -- -- Defence
+        -- Player(self, 1, 2, joypadId, false),
+        -- Player(self, 2, 1, joypadId, false),
+        -- Player(self, 3, 1, joypadId, false),
+        -- Player(self, 4, 2, joypadId, false),
+        -- -- Midfield
+        -- Player(self, 1, 4, joypadId, false),
+        -- Player(self, 2, 2, joypadId, false),
+        -- Player(self, 3, 3, joypadId, false),
+        -- Player(self, 4, 4, joypadId, false),
+        -- -- Forwards
+        -- Player(self, 2, 5, joypadId, false),
         Player(self, 3, 5, joypadId, false),
     }
     self.selectedPlayerIndex = 1
@@ -618,12 +652,14 @@ function Team:update()
     end
 
     for i, player in ipairs(self.players) do
-        if self.joypadId ~= nil and i == self.selectedPlayerIndex then
+        if self.joypadId ~= nil and i == self.selectedPlayerIndex and not player.isGoalkeeper then
             player:updateActive()
         else
             player:updatePassive()
         end
-        if ball.controllingPlayer == player then
+        -- If human is playing and player has ball, that player is always the selected player.
+        -- Player never controls the goalkeeper.
+        if ball.controllingPlayer == player and not player.isGoalkeeper then
             self.selectedPlayerIndex = i
         end
         player.isChasingBall = false
@@ -763,14 +799,41 @@ function _init()
     resetPalette()
     teams = {
         Team('GER', 0, false),
-        Team('DEN', nil, true),
+        Team('DEN', 1, true),
     }
     ball = Ball(FIELD_WIDTH * 8 /2, FIELD_HEIGHT * 8 /2)
     fieldLines = {
-        FieldLine(0, 0, FIELD_WIDTH * 8, 1),
-        FieldLine(0, 0, 1, FIELD_HEIGHT * 8),
-        FieldLine(0, FIELD_HEIGHT * 8, FIELD_WIDTH * 8, 1),
-        FieldLine(FIELD_WIDTH * 8, 0, 1, FIELD_HEIGHT * 8),
+        -- Top left touchline
+        FieldLine(
+            -2,
+            -2,
+            (FIELD_WIDTH - GOAL_WIDTH)/2 * 8 + 2,
+            1
+        ),
+        -- Top right touchline
+        FieldLine(
+            8 * (FIELD_WIDTH/2 + GOAL_WIDTH/2),
+            -2,
+            (FIELD_WIDTH - GOAL_WIDTH)/2 * 8 + 2,
+            1
+        ),
+        -- Bottom left touchline
+        FieldLine(
+            -2,
+            FIELD_HEIGHT * 8 + 2,
+            (FIELD_WIDTH - GOAL_WIDTH)/2 * 8 + 2,
+            1
+        ),
+        -- Bottom right touchline
+        FieldLine(
+            8 * (FIELD_WIDTH/2 + GOAL_WIDTH/2),
+            FIELD_HEIGHT * 8 + 2,
+            (FIELD_WIDTH - GOAL_WIDTH)/2 * 8 + 2,
+            1),
+        -- Left long line
+        FieldLine(-2, -2, 1, FIELD_HEIGHT * 8 + 4),
+        -- Right long line
+        FieldLine(FIELD_WIDTH * 8 + 2, -2, 1, FIELD_HEIGHT * 8 + 4),
         -- Goal lines are slightly behind the field lines
         FieldLine(8 * (FIELD_WIDTH - GOAL_WIDTH)/2 + 2, -2, GOAL_WIDTH * 8 - 4, 1, true, teams[2]),
         FieldLine(8 * (FIELD_WIDTH - GOAL_WIDTH)/2 + 2, FIELD_HEIGHT * 8 + 2, GOAL_WIDTH * 8 - 4, 1, true, teams[1]),
