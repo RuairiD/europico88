@@ -85,9 +85,18 @@ function getDistance(x1, y1, x2, y2)
     )
 end
 
-function setPalette(palette)
-    for original, replacement in pairs(palette) do
-        pal(original, replacement)
+function setPalette(palette, offset)
+    if not offset then
+        offset = 0
+    end
+    local paletteToUse = {}
+    local originals = {}
+    for original, _ in pairs(palette) do
+        add(originals, original)
+    end
+    
+    for i, original in ipairs(originals) do
+        pal(original, palette[originals[(i + offset - 1) % #originals + 1]])
     end
 end
 
@@ -1014,7 +1023,15 @@ function _draw()
     camera()
 
     if goalTimer > 0 then
-        print('goal!', 54, 60, flr(rnd(16)))
+        setPalette(
+            goalScoringTeam.teamData.palette,
+            flr(goalTimer/4) % 2
+        )
+        spr(48, 32, 56, 2, 2)
+        spr(50, 48, 56, 2, 2)
+        spr(52, 64, 56, 2, 2)
+        spr(54, 80, 56, 2, 2)
+        resetPalette()
     end
 
     if halfTimeTimer > 0 or isFullTime() then
