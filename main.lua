@@ -180,12 +180,45 @@ function Ball:move(x, y)
     self.x, self.y, collisions, _ = bumpWorld:move(self, x, y, self.moveFilter)
     for collision in all(collisions) do
         if collision.other:is(FieldLine) then
-            if collision.other.isGoal and goalTimer == 0 then
-                goalTimer = GOAL_TIMER_MAX
-                collision.other.attackingTeam.goals = collision.other.attackingTeam.goals + 1
-                goalScoringTeam = collision.other.attackingTeam
+            if collision.other.isGoal then
+                if goalTimer == 0 then
+                    goalTimer = GOAL_TIMER_MAX
+                    collision.other.attackingTeam.goals = collision.other.attackingTeam.goals + 1
+                    goalScoringTeam = collision.other.attackingTeam
+                end
             elseif ballOutTimer == 0 then
                 ballOutTimer = BALL_OUT_TIMER_MAX
+                if collision.other.attackingTeam then
+                    -- Corner or goal kick
+                    local x, y
+                    if collision.other.attackingTeam == self.lastControllingPlayer.team then
+                        -- goal kick
+                        -- hacky way to check which end ball is at
+                        x = FIELD_WIDTH * 8 / 2
+                        if collision.touch.y < 16 then
+                            y = 16
+                        else
+                            y = FIELD_HEIGHT * 8 - 16
+                        end
+                    else
+                        -- corner
+                        y = collision.touch.y
+                        if collision.touch.x < 8 * FIELD_WIDTH/2 then
+                            x = 0
+                        else
+                            x = FIELD_WIDTH * 8
+                        end
+                    end
+                    ballOutReset = (function()
+                        ball:setPosition(x, y)
+                    end)
+                else
+                    -- Kick in
+                    ballOutReset = (function()
+                        ball:setPosition(collision.touch.x, collision.touch.y)
+                    end)
+                end
+                isFreeKick = true
             end
         elseif collision.other:is(Wall) then
             local elasticity = -1
@@ -223,6 +256,7 @@ function Ball:pass(velX, velY)
     local scale = (0.9 + rnd(0.2))
     self.velX = scale * Ball.PASS_SPEED * velX
     self.velY = scale * Ball.PASS_SPEED * velY
+    isFreeKick = false
 end
 
 function Ball:shoot(velX, velY)
@@ -232,6 +266,7 @@ function Ball:shoot(velX, velY)
     local scale = (0.75 + rnd(0.75))
     self.velX = scale * Ball.SHOOT_SPEED * velX 
     self.velY = scale * Ball.SHOOT_SPEED * velY
+    isFreeKick = false
 end
 
 function Ball:draw()
@@ -305,8 +340,12 @@ function Player:resetPosition()
             self.attackingHomeY = self.defendingHomeY + 15 * 8
         end
     end
-    self.x = self.defendingHomeX
-    self.y = self.defendingHomeY
+    self:setPosition(self.defendingHomeX, self.defendingHomeY)
+end
+
+function Player:setPosition(x, y)
+    self.x = x
+    self.y = y
     bumpWorld:update(self, self.x, self.y, self.width, self.height)
 end
 
@@ -384,7 +423,28 @@ function Player:updatePassive()
             if ball.controllingPlayer == self then
                 -- Check for shooting opportunity
                 -- Less concerned about rapid passes here, so ballReceivedTimer is ignored
-                if rnd(distanceToGoal) < 1 then
+                local closestSameTeamPlayer, distance = self:findClosestPlayer(
+                    true,
+                    -- Prefer players closer to goal
+                    (function (distance, player)
+                        return distance * 0.1 * abs(player.y - goalY)
+                    end)
+                )
+                local passAngle = atan2(
+                    centreX - closestSameTeamPlayer.x,
+                    centreY - closestSameTeamPlayer.y
+                ) + rnd(0.1) - 0.05
+
+                if isFreeKick then
+                    if distanceToGoal > FIELD_HEIGHT/2 * 8 then
+                        ball:shoot(-cos(angleToGoal + rnd(0.1) - 0.05), -sin(angleToGoal + rnd(0.1) - 0.05))
+                    elseif distance < 32 then
+                        ball:pass(-cos(passAngle), -sin(passAngle))
+                        self.team.passes = self.team.passes + 1
+                    else
+                        ball:shoot(-cos(angleToGoal + rnd(0.1) - 0.05), -sin(angleToGoal + rnd(0.1) - 0.05))
+                    end
+                elseif rnd(distanceToGoal) < 1 then
                     ball:shoot(-cos(angleToGoal + rnd(0.1) - 0.05), -sin(angleToGoal + rnd(0.1) - 0.05))
                     self.team.shots = self.team.shots + 1
                 else
@@ -408,17 +468,6 @@ function Player:updatePassive()
                                 self.team.shots = self.team.shots + 1
                             end
                         elseif self.ballReceivedTimer == 0 then
-                            local closestSameTeamPlayer, _ = self:findClosestPlayer(
-                                true,
-                                -- Prefer players closer to goal
-                                (function (distance, player)
-                                    return distance * 0.1 * abs(player.y - goalY)
-                                end)
-                            )
-                            local passAngle = atan2(
-                                centreX - closestSameTeamPlayer.x,
-                                centreY - closestSameTeamPlayer.y
-                            ) + rnd(0.1) - 0.05
                             ball:pass(-cos(passAngle), -sin(passAngle))
                             self.team.passes = self.team.passes + 1
                         end
@@ -564,7 +613,10 @@ end
 
 
 function Player:move(velX, velY)
-    if self.ballLostTimer > Player.BALL_LOST_TIMER_MAX/2 and ball.controllingPlayer ~= self then
+    if
+        isFreeKick or
+        (self.ballLostTimer > Player.BALL_LOST_TIMER_MAX/2 and ball.controllingPlayer ~= self)
+    then
         velX = 0
         velY = 0
     end
@@ -905,11 +957,12 @@ end
 
 FIELD_LINE_OFFSET = 4
 function initGame()
+    poo = false
     bumpWorld = bump.newWorld(8)
     resetPalette()
     teams = {
         Team('SWE', nil, false),
-        Team('NED', nil, true),
+        Team('DEN', nil, true),
     }
     ball = Ball(FIELD_WIDTH * 8 /2, FIELD_HEIGHT * 8 /2)
     fieldLines = {
@@ -918,28 +971,37 @@ function initGame()
             -FIELD_LINE_OFFSET,
             -FIELD_LINE_OFFSET,
             (FIELD_WIDTH - GOAL_WIDTH)/2 * 8 + FIELD_LINE_OFFSET,
-            1
+            1,
+            false,
+            teams[2]
         ),
         -- Top right touchline
         FieldLine(
             8 * (FIELD_WIDTH/2 + GOAL_WIDTH/2),
             -FIELD_LINE_OFFSET,
             (FIELD_WIDTH - GOAL_WIDTH)/2 * 8 + FIELD_LINE_OFFSET,
-            1
+            1,
+            false,
+            teams[2]
         ),
         -- Bottom left touchline
         FieldLine(
             -FIELD_LINE_OFFSET,
             FIELD_HEIGHT * 8 + FIELD_LINE_OFFSET,
             (FIELD_WIDTH - GOAL_WIDTH)/2 * 8 + FIELD_LINE_OFFSET,
-            1
+            1,
+            false,
+            teams[1]
         ),
         -- Bottom right touchline
         FieldLine(
             8 * (FIELD_WIDTH/2 + GOAL_WIDTH/2),
             FIELD_HEIGHT * 8 + FIELD_LINE_OFFSET,
             (FIELD_WIDTH - GOAL_WIDTH)/2 * 8 + FIELD_LINE_OFFSET,
-            1),
+            1,
+            false,
+            teams[1]
+        ),
         -- Left long line
         FieldLine(-FIELD_LINE_OFFSET, -FIELD_LINE_OFFSET, 1, FIELD_HEIGHT * 8 + FIELD_LINE_OFFSET * 2),
         -- Right long line
@@ -1016,6 +1078,32 @@ function _update60()
         ballOutTimer = ballOutTimer - 1
         if ballOutTimer == 0 then
             resetKickOff()
+            -- This function is set depending on which field line was crossed
+            ballOutReset()
+
+            -- Possession goes to team that didn't touch the ball last
+            local team = teams[1]
+            if teams[1] == ball.lastControllingPlayer.team then
+                team = teams[2]
+            end
+
+            printh('kicked out by '..ball.lastControllingPlayer.team.teamId)
+            printh('is team 1 '..tostr(team == teams[1]))
+
+            -- Find player closest to ball to take free kick.
+            local nearestPlayer, distance = nil, 9999
+            for player in all(team.players) do
+                local candidateDistance = getDistance(
+                    player.x, player.y, ball.x, ball.y
+                )
+                if not player.isGoalkeeper and candidateDistance < distance then
+                    nearestPlayer = player
+                    distance = candidateDistance
+                end
+            end
+
+            nearestPlayer:setPosition(ball.x, ball.y)
+            ball.controllingPlayer = nearestPlayer
         end
     end
 
@@ -1034,6 +1122,18 @@ function _update60()
 
     if halfTimeTimer == 0 and not isFullTime() then
         ball:update()
+    end
+
+    if halfTimeTimer == 1 or (isFullTime() and poo ~= true) then
+        printh(teams[1].teamId)
+        printh('Goals: '..tostr(teams[1].goals))
+        printh('Shots: '..tostr(teams[1].shots))
+        printh('Passes: '..tostr(teams[1].passes))
+        printh(teams[2].teamId)
+        printh('Goals: '..tostr(teams[2].goals))
+        printh('Shots: '..tostr(teams[2].shots))
+        printh('Passes: '..tostr(teams[2].passes))
+        if isFullTime() then poo = true initGame() end
     end
 end
 
@@ -1102,5 +1202,7 @@ function _draw()
     end
 
     drawScoreDisplay()
+
+    print(isFreeKick, 8, 72, 7)
 end
 -- END MAIN
