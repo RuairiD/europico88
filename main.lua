@@ -986,7 +986,6 @@ end
 
 FIELD_LINE_OFFSET = 4
 function initGame()
-    poo = false
     bumpWorld = bump.newWorld(8)
     resetPalette()
     ball = Ball(FIELD_WIDTH * 8 /2, FIELD_HEIGHT * 8 /2)
@@ -1159,18 +1158,6 @@ function _update60()
 
     if halfTimeTimer == 0 and not isFullTime() then
         ball:update()
-    end
-
-    if halfTimeTimer == 1 or (isFullTime() and poo ~= true) then
-        printh(teams[1].teamId)
-        printh('Goals: '..tostr(teams[1].goals))
-        printh('Shots: '..tostr(teams[1].shots))
-        printh('Passes: '..tostr(teams[1].passes))
-        printh(teams[2].teamId)
-        printh('Goals: '..tostr(teams[2].goals))
-        printh('Shots: '..tostr(teams[2].shots))
-        printh('Passes: '..tostr(teams[2].passes))
-        if isFullTime() then poo = true initGame() end
     end
 end
 
