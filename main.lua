@@ -1,3 +1,9 @@
+STATES = {
+    TITLE = 'TITLE',
+    TEAM_SELECT = 'TEAM_SELECT',
+    GAME = 'GAME',
+}
+
 TEAMS = {
     SWE = {
         palette = {
@@ -5,6 +11,10 @@ TEAMS = {
             [10] = 10,
             -- Shorts
             [12] = 12,
+        },
+        flags = {
+            icon = 80,
+            large = 96,
         },
     },
     GER = {
@@ -14,6 +24,10 @@ TEAMS = {
             -- Shorts
             [12] = 0,
         },
+        flags = {
+            icon = 83,
+            large = 128,
+        },
     },
     DEN = {
         palette = {
@@ -21,6 +35,10 @@ TEAMS = {
             [10] = 8,
             -- Shorts
             [12] = 7,
+        },
+        flags = {
+            icon = 81,
+            large = 99,
         },
     },
     NED = {
@@ -30,6 +48,10 @@ TEAMS = {
             -- Shorts
             [12] = 7,
         },
+        flags = {
+            icon = 82,
+            large = 102,
+        },
     },
     SCO = {
         palette = {
@@ -37,6 +59,10 @@ TEAMS = {
             [10] = 1,
             -- Shorts
             [12] = 7,
+        },
+        flags = {
+            icon = 85,
+            large = 134,
         },
     },
     ENG = {
@@ -46,6 +72,10 @@ TEAMS = {
             -- Shorts
             [12] = 1,
         },
+        flags = {
+            icon = 87,
+            large = 163,
+        },
     },
     FRA = {
         palette = {
@@ -54,6 +84,10 @@ TEAMS = {
             -- Shorts
             [12] = 7,
         },
+        flags = {
+            icon = 84,
+            large = 131,
+        },
     },
     CIS = {
         palette = {
@@ -61,6 +95,10 @@ TEAMS = {
             [10] = 8,
             -- Shorts
             [12] = 7,
+        },
+        flags = {
+            icon = 86,
+            large = 160,
         },
     },
 }
@@ -76,6 +114,11 @@ DIRECTIONS = {
 FIELD_BUFFER = 4
 FIELD_WIDTH = 24
 FIELD_HEIGHT = 48
+
+function printShadow(text, x, y)
+    print(text, x, y + 1, 0)
+    print(text, x, y, 7)
+end
 
 function getDistance(x1, y1, x2, y2)
     local dx = (x1 - x2)/8
@@ -980,18 +1023,15 @@ BALL_OUT_TIMER_MAX = 180
 HALF_LENGTH = 120
 GAME_TIME_SCALE = 45 * 60
 HALF_TIME_TIMER_MAX = 300
-function _init()
-    initGame()
-end
 
 FIELD_LINE_OFFSET = 4
-function initGame()
+function initGame(team1, team2, joypadIds)
     bumpWorld = bump.newWorld(8)
     resetPalette()
     ball = Ball(FIELD_WIDTH * 8 /2, FIELD_HEIGHT * 8 /2)
     teams = {
-        Team('SWE', 0, false),
-        Team('DEN', nil, true),
+        Team(team1, joypadIds[1], false),
+        Team(team2, joypadIds[2], true),
     }
     fieldLines = {
         -- Top left touchline
@@ -1068,7 +1108,7 @@ function resetKickOff()
     end
 end
 
-function _update60()
+function updateGame()
     if
         ballOutTimer == 0 and
         halfTimeTimer == 0 and
@@ -1163,8 +1203,8 @@ end
 
 function drawScoreDisplay()
     for i, team in ipairs(teams) do
-        print(team.teamId.." "..tostr(team.goals), 8, i * 8 + 1, 0)
-        print(team.teamId.." "..tostr(team.goals), 8, i * 8, 7)
+        spr(team.teamData.flags.icon, 8, i * 8)
+        printShadow(team.goals, 18, i * 8 + 2)
     end
     local scaledGameTimer = (gameTimer / (60 * HALF_LENGTH)) * GAME_TIME_SCALE
     local mins = tostr(flr(scaledGameTimer / 60))
@@ -1175,11 +1215,10 @@ function drawScoreDisplay()
     if #secs < 2 then
         secs = '0'..secs
     end
-    print(mins..':'..secs, 8, 25, 0)
-    print(mins..':'..secs, 8, 24, 7)
+    printShadow(mins..':'..secs, 8, 26)
 end
 
-function _draw()
+function drawGame()
     cls()
     cameraTargetX, cameraTargetY = ball.x - 63, ball.y - 63
     if goalTimer > 0 and ball.lastControllingPlayer then
@@ -1227,5 +1266,115 @@ function _draw()
     end
 
     drawScoreDisplay()
+end
+
+SELECT_WIDTH = 4
+SELECT_HEIGHT = 2
+TEAM_GRID = {
+    { 'SWE', 'FRA', 'DEN', 'ENG' },
+    { 'NED', 'SCO', 'CIS', 'GER' },
+}
+MATCH_MODES = {
+    -- P1 vs P2
+    P1vsP2 = { 0, 1 },
+    -- P1 vs CPU
+    P1vsCPU = { 0, nil },
+    -- CPI vs CPU
+    CPUvsCPU = { nil, nil },
+}
+selectedMatchMode = 'P1vsP2'
+function initTeamSelect()
+    p1Cursor = {
+        x = 0,
+        y = 0,
+        selected = false,
+    }
+    p2Cursor = {
+        x = 0,
+        y = 0,
+        selected = false,
+    }
+end
+
+function updateTeamSelect()
+    if p1Cursor.selected then
+        if btnp(5) then
+            p1Cursor.selected = false
+        elseif btnp(4) then
+            p2Cursor.selected = true
+            state = STATES.GAME
+            initGame(
+                TEAM_GRID[p1Cursor.y + 1][p1Cursor.x + 1],
+                TEAM_GRID[p2Cursor.y + 1][p2Cursor.x + 1],
+                MATCH_MODES[selectedMatchMode]
+            )
+        elseif btnp(0) then
+            p2Cursor.x = p2Cursor.x - 1
+        elseif btnp(1) then
+            p2Cursor.x = p2Cursor.x + 1
+        elseif btnp(2) then
+            p2Cursor.y = p2Cursor.y - 1
+        elseif btnp(3) then
+            p2Cursor.y = p2Cursor.y + 1
+        end
+    else
+        if btnp(4) then
+            p1Cursor.selected = true
+        elseif btnp(0) then
+            p1Cursor.x = p1Cursor.x - 1
+        elseif btnp(1) then
+            p1Cursor.x = p1Cursor.x + 1
+        elseif btnp(2) then
+            p1Cursor.y = p1Cursor.y - 1
+        elseif btnp(3) then
+            p1Cursor.y = p1Cursor.y + 1
+        end
+    end
+end
+
+function drawTeamSelect()
+    cls()
+    for y, row in ipairs(TEAM_GRID) do
+        for x, team in ipairs(row) do
+            spr(TEAMS[team].flags.large, 8 + (x - 1) * 26, 8 + (y - 1) * 18, 3, 2)
+        end
+    end
+
+    palt(0, false)
+    if p1Cursor.selected then
+        if selectedMatchMode == 'P1vsP2' then
+            spr(195, 8 + p2Cursor.x * 26, 8 + p2Cursor.y * 18, 3, 2)
+        else
+            spr(224, 8 + p2Cursor.x * 26, 8 + p2Cursor.y * 18, 3, 2)
+        end
+    else
+        if selectedMatchMode == 'CPUvsCPU' then
+            spr(224, 8 + p1Cursor.x * 26, 8 + p1Cursor.y * 18, 3, 2)
+        else
+            spr(192, 8 + p1Cursor.x * 26, 8 + p1Cursor.y * 18, 3, 2)
+        end
+    end
+    resetPalette()
+end
+
+function _init()
+    state = STATES.TEAM_SELECT
+    initTeamSelect()
+end
+
+UPDATES = {
+    GAME = updateGame,
+    TEAM_SELECT = updateTeamSelect,
+}
+function _update60()
+    UPDATES[state]()
+end
+
+DRAWS = {
+    GAME = drawGame,
+    TEAM_SELECT = drawTeamSelect,
+}
+function _draw()
+    DRAWS[state]()
 end
 -- END MAIN
