@@ -4,11 +4,11 @@ STATES = {
 }
 
 TEAMS = {
-    SWE = {
-        palette = "10, 12, 1, 10",
+    URS = {
+        palette = "10, 7, 7, 10",
         flags = { 80, 96 },
     },
-    GER = {
+    FRG = {
         palette = "7, 0, 8, 0",
         flags = { 83, 128 },
     },
@@ -19,24 +19,24 @@ TEAMS = {
     NED = {
         palette = "9, 7, 7, 9",
         flags = { 82, 102 },
-        skinSwap = "7, 8, 9",
+        skinSwap = "3, 10",
     },
-    SCO = {
-        palette = "1, 7, 7, 2",
+    IRL = {
+        palette = "3, 7, 7, 3",
         flags = { 85, 134 },
+        skinSwap = "5, 8"
     },
     ENG = {
         palette = "7, 1, 8, 7",
         flags = { 87, 163 },
-        skinSwap = "4, 6",
+        skinSwap = "9",
     },
-    FRA = {
+    ITA = {
         palette = "12, 7, 7, 12",
         flags = { 84, 131 },
-        skinSwap = "2, 3",
     },
-    CIS = {
-        palette = "8, 7, 7, 8",
+    ESP = {
+        palette = "10, 1, 7, 7",
         flags = { 86, 160 },
     },
 }
@@ -793,8 +793,8 @@ Team.GRID_POSITIONS = {
     { 3, 2 }, -- CB
     { 4, 2 }, -- LB
     -- Midfield
-    { 2.5, 3 }, -- CDM
     { 1, 4 }, -- RW
+    { 2.5, 3 }, -- CDM
     { 3.5, 4 }, -- CAM
     { 4, 4 }, -- LW
     -- Forwards
@@ -993,16 +993,16 @@ function drawField()
     -- stands
     if teams then
         -- north
-        setPalette(teams[1].palette)
-        map(0, 0, - 8 * (3 * FIELD_BUFFER), - 8 * FIELD_BUFFER - 8 * 8, 48, 8)
-        map(48, 0, - 8 * FIELD_BUFFER - 8 * 8,  - 8 * FIELD_BUFFER, 8, 28)
-        map(48, 0, 8 * (FIELD_WIDTH + FIELD_BUFFER),  - 8 * FIELD_BUFFER, 8, 28)
-        -- south
-        setPalette(teams[2].palette)
-        map(0, 8, - 8 * (3 * FIELD_BUFFER), 8 * (FIELD_HEIGHT + FIELD_BUFFER), 48, 8)
-        map(56, 0, - 8 * FIELD_BUFFER - 8 * 8, 8 * FIELD_HEIGHT/2, 8, 28)
-        map(56, 0, 8 * (FIELD_WIDTH + FIELD_BUFFER), 8 * FIELD_HEIGHT/2, 8, 28)
-        resetPalette()
+        -- setPalette(teams[1].palette)
+        -- map(0, 0, - 8 * (3 * FIELD_BUFFER), - 8 * FIELD_BUFFER - 8 * 8, 48, 8)
+        -- map(48, 0, - 8 * FIELD_BUFFER - 8 * 8,  - 8 * FIELD_BUFFER, 8, 28)
+        -- map(48, 0, 8 * (FIELD_WIDTH + FIELD_BUFFER),  - 8 * FIELD_BUFFER, 8, 28)
+        -- -- south
+        -- setPalette(teams[2].palette)
+        -- map(0, 8, - 8 * (3 * FIELD_BUFFER), 8 * (FIELD_HEIGHT + FIELD_BUFFER), 48, 8)
+        -- map(56, 0, - 8 * FIELD_BUFFER - 8 * 8, 8 * FIELD_HEIGHT/2, 8, 28)
+        -- map(56, 0, 8 * (FIELD_WIDTH + FIELD_BUFFER), 8 * FIELD_HEIGHT/2, 8, 28)
+        -- resetPalette()
     end
 end
 
@@ -1287,8 +1287,8 @@ end
 SELECT_WIDTH = 4
 SELECT_HEIGHT = 2
 TEAM_GRID = {
-    { 'SWE', 'FRA', 'DEN', 'ENG' },
-    { 'NED', 'SCO', 'CIS', 'GER' },
+    { 'FRG', 'ITA', 'DEN', 'ESP' },
+    { 'ENG', 'IRL', 'NED', 'URS' },
 }
 MATCH_MODES = {
     -- P1 vs P2
@@ -1395,22 +1395,22 @@ function drawMainMenu()
         printShadowCentre(selectedMatchMode[3], 8)
         for y, row in ipairs(TEAM_GRID) do
             for x, team in ipairs(row) do
-                local px, py = 13 + (x - 1) * 26, 32 + (y - 1) * 18
+                local px, py = 11 + (x - 1) * 27, 32 + (y - 1) * 19
                 spr(TEAMS[team].flags[2], px, py, 3, 2)
-                rect(px, py, px + 23, py + 15, 7)
+                rect(px - 1, py - 1, px + 24, py + 16, 0)
             end
         end
 
         palt(0, false)
         if p1Cursor.selected then
-            local cursorX, cursorY = 13 + p2Cursor.x * 26, 32 + p2Cursor.y * 18
+            local cursorX, cursorY = 11 + p2Cursor.x * 27, 32 + p2Cursor.y * 19
             if selectedMatchMode[3] == 'P1 vs P2' then
                 spr(195, cursorX, cursorY, 3, 2)
             else
                 spr(224, cursorX, cursorY, 3, 2)
             end
         else
-            local cursorX, cursorY = 13 + p1Cursor.x * 26, 32 + p1Cursor.y * 18
+            local cursorX, cursorY = 11 + p1Cursor.x * 27, 32 + p1Cursor.y * 19
             if selectedMatchMode[3] == 'CPU vs CPU' then
                 spr(224, cursorX, cursorY, 3, 2)
             else
@@ -1421,12 +1421,12 @@ function drawMainMenu()
         if p1Cursor.selected then
             spr(TEAMS[p1Team].flags[2], 28, 72, 3, 2)
         end
-        rect(28, 72, 51, 87, 7)
+        rect(27, 71, 52, 88, 0)
 
         if p2Cursor.selected then
             spr(TEAMS[p2Team].flags[2], 76, 72, 3, 2)
         end
-        rect(76, 72, 99, 87, 7)
+        rect(75, 71, 100, 88, 0)
 
         printShadowCentre('vs', 78)
 
