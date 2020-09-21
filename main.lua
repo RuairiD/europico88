@@ -5,39 +5,39 @@ STATES = {
 
 TEAMS = {
     URS = {
-        palette = "10, 7, 7, 10",
-        flags = { 80, 96 },
+        palette = split("8, 7, 7, 8"),
+        flags = split("80, 96"),
     },
     FRG = {
-        palette = "7, 0, 8, 0",
-        flags = { 83, 128 },
+        palette = split("7, 0, 3, 7"),
+        flags = split("83, 128"),
     },
     DEN = {
-        palette = "8, 7, 0, 8",
-        flags = { 81, 99 },
+        palette = split("8, 7, 7, 8"),
+        flags = split("81, 99"),
     },
     NED = {
-        palette = "9, 7, 7, 9",
-        flags = { 82, 102 },
-        skinSwap = "3, 10",
+        palette = split("9, 7, 7, 9"),
+        flags = split("82, 102"),
+        skinSwap = split("3, 10"),
     },
     IRL = {
-        palette = "3, 7, 7, 3",
-        flags = { 85, 134 },
-        skinSwap = "5, 8"
+        palette = split("3, 7, 7, 3"),
+        flags = split("85, 134"),
+        skinSwap = split("5, 8")
     },
     ENG = {
-        palette = "7, 1, 8, 7",
-        flags = { 87, 163 },
-        skinSwap = "9",
+        palette = split("7, 1, 8, 7"),
+        flags = split("87, 163"),
+        skinSwap = split("9"),
     },
     ITA = {
-        palette = "12, 7, 7, 12",
-        flags = { 84, 131 },
+        palette = split("12, 7, 7, 12"),
+        flags = split("84, 131"),
     },
     ESP = {
-        palette = "10, 1, 7, 7",
-        flags = { 86, 160 },
+        palette = split("8, 1, 12, 7"),
+        flags = split("86, 160"),
     },
 }
 
@@ -48,10 +48,10 @@ DIRECTIONS = {
     W = 'W',
 }
 
--- Dimensions in tiles
-FIELD_BUFFER = 4
-FIELD_WIDTH = 24
-FIELD_HEIGHT = 48
+-- Field dimensions
+-- FIELD_BUFFER = 4
+-- FIELD_WIDTH = 24
+-- FIELD_HEIGHT = 48
 
 function printShadowCentre(text, y, color)
     printShadow(text, (128 - #text * 4)/2, y, color)
@@ -199,24 +199,24 @@ function Ball:move(x, y)
                     -- Corner or goal kick
                     if collision.other.attackingTeam == kickOffTeam then
                         -- corner
-                        if collision.touch.x < 8 * FIELD_WIDTH/2 then
+                        if collision.touch.x < 96 then
                             x = 8
                         else
-                            x = FIELD_WIDTH * 8 - 7
+                            x = 185
                         end
-                        if collision.touch.y < 8 * FIELD_HEIGHT/2 then
+                        if collision.touch.y < 192 then
                             y = 8
                         else
-                            y = FIELD_HEIGHT * 8 - 7
+                            y = 377
                         end
                     else
                         -- goal kick
                         -- hacky way to check which end ball is at
-                        x = FIELD_WIDTH * 8 / 2
+                        x = 96
                         if collision.touch.y < 16 then
                             y = 16
                         else
-                            y = FIELD_HEIGHT * 8 - 16
+                            y = 368
                         end
                     end
                     ballOutReset = (function()
@@ -225,7 +225,7 @@ function Ball:move(x, y)
                 else
                     -- Kick in
                     x, y = collision.touch.x, collision.touch.y
-                    if x < FIELD_WIDTH * 8 / 2 then
+                    if x < 96 then
                         x = x + 8
                     else
                         x = x - 8
@@ -338,9 +338,9 @@ function Player:resetPosition(isKickOff, targetX, targetY)
         -- TODO separate Goalkeeper class
         self.width = 9
         self.height = 9
-        self.defendingHomeX = (FIELD_WIDTH * 8 - 8)/2
+        self.defendingHomeX = 92
         if self.team.playingUp then
-            self.defendingHomeY = FIELD_HEIGHT * 8 - 8
+            self.defendingHomeY = 376
         else
             self.defendingHomeY = 0
         end
@@ -348,13 +348,13 @@ function Player:resetPosition(isKickOff, targetX, targetY)
         self.attackingHomeY = self.defendingHomeY
     else
         if self.team.playingUp then
-            self.defendingHomeX = (5 - self.gridX) * 6 * 8 - 24
-            self.defendingHomeY = (9 - self.gridY) * 6 * 8 - 24
+            self.defendingHomeX = (5 - self.gridX) * 48 - 24
+            self.defendingHomeY = (9 - self.gridY) * 48 - 24
             self.attackingHomeX = self.defendingHomeX
             self.attackingHomeY = self.defendingHomeY - 12 * 8
         else
-            self.defendingHomeX = self.gridX * 6 * 8 - 24
-            self.defendingHomeY = self.gridY * 6 * 8 - 24
+            self.defendingHomeX = self.gridX * 48 - 24
+            self.defendingHomeY = self.gridY * 48 - 24
             self.attackingHomeX = self.defendingHomeX
             self.attackingHomeY = self.defendingHomeY + 12 * 8
         end
@@ -372,7 +372,7 @@ function Player:resetPosition(isKickOff, targetX, targetY)
         y = y - 16 * sin(angle)
     end
 
-    local halfway = 8 * FIELD_HEIGHT / 2
+    local halfway = 192
     if isKickOff then
         if self.team.playingUp and y < halfway then
             y = halfway + 16
@@ -452,9 +452,9 @@ function Player:updatePassive()
     local velX, velY = 0, 0
     local centreX, centreY = self.x + 2, self.y + 2
     local goalY = 0
-    local goalX = FIELD_WIDTH * 8 / 2
+    local goalX = 96
     if not self.team.playingUp then
-        goalY = FIELD_HEIGHT * 8
+        goalY = 48 * 8
     end
     local distanceToGoal = getDistance(centreX, centreY + 2, goalX, goalY)
     local angleToGoal = atan2(
@@ -490,9 +490,7 @@ function Player:updatePassive()
                     -- Add some random delay to kick being taken
                     -- so computer doesn't take it straight away.
                     if kickOffDelay == 0 then
-                        if distanceToGoal > FIELD_HEIGHT/2 * 8 then
-                            ball:shoot(-cos(angleToGoal + rnd(0.1) - 0.05), -sin(angleToGoal + rnd(0.1) - 0.05))
-                        elseif distance < 48 then
+                        if distance < 48 then
                             ball:pass(-cos(passAngle), -sin(passAngle))
                         else
                             ball:shoot(-cos(angleToGoal + rnd(0.1) - 0.05), -sin(angleToGoal + rnd(0.1) - 0.05))
@@ -515,7 +513,7 @@ function Player:updatePassive()
                     then
                         -- If player is being closed down, either clear the ball (if far from
                         -- goal), shoot (if close to goal) or attempt to pass it to a teammate.
-                        if distanceToGoal >  2/3 * FIELD_HEIGHT * 8 or distanceToGoal < 64 then
+                        if distanceToGoal > 256 or distanceToGoal < 64 then
                             -- Wild shot/clearance
                             ball:shoot(-cos(angleToGoal + rnd(0.3) - 0.15), -sin(angleToGoal + rnd(0.3) - 0.15))
                         elseif self.ballReceivedTimer == 0 then
@@ -535,22 +533,20 @@ function Player:updatePassive()
                     centreY - ball.y
                 )
                 if self.isDefending then
+                    targetX = self.defendingHomeX - 16 * cos(angleToBall)
+                    targetY = self.defendingHomeY - 16 * sin(angleToBall)
                     if self.isChasingBall then
                         -- Ball is close, go to ball!
                         targetX = ball.x
                         targetY = ball.y
-                    else
-                        targetX = self.defendingHomeX - 16 * cos(angleToBall)
-                        targetY = self.defendingHomeY - 16 * sin(angleToBall)
                     end
                 else
+                    targetX = self.attackingHomeX - 16 * cos(angleToBall)
+                    targetY = self.attackingHomeY - 16 * sin(angleToBall)
                     if ball.controllingPlayer == nil and self.isChasingBall then
                         -- Ball is close, go to ball!
                         targetX = ball.x
                         targetY = ball.y
-                    else
-                        targetX = self.attackingHomeX - 16 * cos(angleToBall)
-                        targetY = self.attackingHomeY - 16 * sin(angleToBall)
                     end
                 end
 
@@ -565,18 +561,18 @@ function Player:updatePassive()
         self.isRunning = false
         if goalScoringTeam == self.team then
             if ball.lastControllingPlayer ~= self then
-                velX = (ball.lastControllingPlayer.x + rnd(8) - 4) - self.x
-                velY = (ball.lastControllingPlayer.y + rnd(8) - 4) - self.y
+                velX = (ball.lastControllingPlayer.x + rnd(16) - 8) - self.x
+                velY = (ball.lastControllingPlayer.y + rnd(16) - 8) - self.y
                 self.isRunning = true
             else
                 -- Run to nearest corner!
                 local targetX = 0
                 local targetY = 0
-                if self.x > (FIELD_WIDTH * 8) / 2 then
-                    targetX = FIELD_WIDTH * 8
+                if self.x > 96 then
+                    targetX = 192
                 end
-                if self.y > (FIELD_HEIGHT * 8) / 2 then
-                    targetY = FIELD_HEIGHT * 8
+                if self.y > 192 then
+                    targetY = 384
                 end
                 velX = targetX - self.x
                 velY = targetY - self.y
@@ -612,9 +608,9 @@ function Player:updateActive()
     self.isRunning = false
     local velX, velY = 0, 0
     local goalY = 0
-    local goalX = FIELD_WIDTH * 8 / 2
+    local goalX = 96
     if not self.team.playingUp then
-        goalY = FIELD_HEIGHT * 8
+        goalY = 384
     end
     local angleToGoal = atan2(
         self.x - goalX,
@@ -691,10 +687,10 @@ function Player:move(velX, velY)
 
     local targetX, targetY = self.x + velX, self.y + velY
     if self.isGoalkeeper then
-        if targetX < 8 * (FIELD_WIDTH - GOAL_WIDTH)/2 then
-            targetX = 8 * (FIELD_WIDTH - GOAL_WIDTH)/2
-        elseif targetX > 8 * (FIELD_WIDTH/2 + GOAL_WIDTH/2) - self.width then
-            targetX = 8 * (FIELD_WIDTH/2 + GOAL_WIDTH/2) - self.width 
+        if targetX < 8 * (24 - GOAL_WIDTH)/2 then
+            targetX = 8 * (24 - GOAL_WIDTH)/2
+        elseif targetX > 8 * (12 + GOAL_WIDTH/2) - self.width then
+            targetX = 8 * (12 + GOAL_WIDTH/2) - self.width 
         end
     end
 
@@ -788,24 +784,23 @@ Team = Object:extend()
 
 Team.GRID_POSITIONS = {
         -- Defence
-    { 1, 2 }, -- RB
-    { 2, 2 }, -- CB
-    { 3, 2 }, -- CB
-    { 4, 2 }, -- LB
+    "1, 2", -- RB
+    "2, 2", -- CB
+    "3, 2", -- CB
+    "4, 2", -- LB
     -- Midfield
-    { 1, 4 }, -- RW
-    { 2.5, 3 }, -- CDM
-    { 3.5, 4 }, -- CAM
-    { 4, 4 }, -- LW
+    "1, 4", -- RW
+    "2.5, 3", -- CDM
+    "3.5, 4", -- CAM
+    "4, 4", -- LW
     -- Forwards
-    { 2, 5 }, -- SC
-    { 3, 5 }, -- SC
+    "2, 5", -- SC
+    "3, 5", -- SC
 }
 function Team:new(teamId, joypadId, playingUp, isAway)
     self.teamId = teamId
     self.teamData = TEAMS[teamId]
-    self.palette = split(self.teamData.palette)
-    self.skinSwap = split(self.teamData.skinSwap)
+    self.palette = self.teamData.palette
     self.playingUp = playingUp
     self.isAway = isAway
     self.joypadId = joypadId
@@ -814,10 +809,11 @@ function Team:new(teamId, joypadId, playingUp, isAway)
         Goalkeeper(self, 1, 1, joypadId, true),
     }
     for pos in all(Team.GRID_POSITIONS) do
+        local splitPos = split(pos)
         add(self.players, Player(
             self,
-            pos[1],
-            pos[2],
+            tonum(splitPos[1]),
+            tonum(splitPos[2]),
             joypadId,
             false
         ))
@@ -898,7 +894,7 @@ function Team:draw()
             circ(player.x + 3, player.y + 4, 3, Team.CURSOR_COLORS[self.joypadId + 1])
         end
         local swap = false
-        for c in all(self.skinSwap) do
+        for c in all(self.teamData.skinSwap) do
             if c == i then
                 swap = true
             end
@@ -919,18 +915,18 @@ WIDTH_6_YARD = 6
 HEIGHT_6_YARD = 2
 GOAL_WIDTH = 4
 function drawField()
-    for y = -FIELD_BUFFER, FIELD_HEIGHT + FIELD_BUFFER - 1, FIELD_STRIPE_HEIGHT do
+    for y = -4, 51, FIELD_STRIPE_HEIGHT do
         rectfill(
-            -FIELD_BUFFER * 8,
+            -32,
             y * 8,
-            8 * (FIELD_WIDTH + 2 * FIELD_BUFFER),
+            256,
             (y + FIELD_STRIPE_HEIGHT) * 8 - 1,
             FIELD_COLORS[flr(y/2) % 2 + 1]
         )
     end
-    rect(0, 0, FIELD_WIDTH * 8 - 1, FIELD_HEIGHT * 8 - 1, 7)
+    rect(0, 0, 191, 383, 7)
     -- 18 yards
-    local x18Yards = (FIELD_WIDTH - WIDTH_18_YARD)/2
+    local x18Yards = (24 - WIDTH_18_YARD)/2
     rect(
         x18Yards * 8,
         0,
@@ -940,13 +936,13 @@ function drawField()
     )
     rect(
         x18Yards * 8,
-        (FIELD_HEIGHT - HEIGHT_18_YARD) * 8,
+        (48 - HEIGHT_18_YARD) * 8,
         (x18Yards + WIDTH_18_YARD) * 8 - 1,
-        FIELD_HEIGHT * 8 - 1,
+        383,
         7
     )
     -- 6 yards
-    local x6Yards = (FIELD_WIDTH - WIDTH_6_YARD)/2
+    local x6Yards = (24 - WIDTH_6_YARD)/2
     rect(
         x6Yards * 8,
         0,
@@ -956,52 +952,52 @@ function drawField()
     )
     rect(
         x6Yards * 8,
-        (FIELD_HEIGHT - HEIGHT_6_YARD) * 8,
+        (48 - HEIGHT_6_YARD) * 8,
         (x6Yards + WIDTH_6_YARD) * 8 - 1,
-        FIELD_HEIGHT * 8 - 1,
+        383,
         7
     )
     -- penalty spots
-    local xPenalty = (FIELD_WIDTH * 8 - 2)/2
-    rect(
-        xPenalty,
-        32,
-        xPenalty + 2,
-        33,
-        7
-    )
-    rect(
-        xPenalty,
-        FIELD_HEIGHT * 8 - 32,
-        xPenalty + 2,
-        FIELD_HEIGHT * 8 - 31,
-        7
-    )
+    -- commented out to save tokens since there aren't actually
+    -- penalties in the game. ideally we can uncomment this eventually
+    -- local xPenalty = (24 * 8 - 2)/2
+    -- rect(
+    --     xPenalty,
+    --     32,
+    --     xPenalty + 2,
+    --     33,
+    --     7
+    -- )
+    -- rect(
+    --     xPenalty,
+    --     48 * 8 - 32,
+    --     xPenalty + 2,
+    --     48 * 8 - 31,
+    --     7
+    -- )
     -- Ds
-    clip(0, HEIGHT_18_YARD * 8 - cameraY + 1, 128, (FIELD_HEIGHT - HEIGHT_18_YARD * 2) * 8)
-    circ(FIELD_WIDTH * 8 / 2, 0, 7 * 8, 7)
-    circ(FIELD_WIDTH * 8 / 2, FIELD_HEIGHT * 8, 7 * 8, 7)
-    clip()
+    spr(59, 76, HEIGHT_18_YARD * 8, 5, 1)
+    spr(75, 76, (48 - HEIGHT_18_YARD) * 8 - 8, 5, 1)
     -- halfway line
-    line(0, FIELD_HEIGHT * 8 / 2, FIELD_WIDTH * 8 - 1, FIELD_HEIGHT * 8 / 2, 7)
-    circ(FIELD_WIDTH * 8 / 2, FIELD_HEIGHT * 8 / 2, 32, 7)
+    line(0, 192, 191, 192, 7)
+    circ(96, 192, 32, 7)
     -- corners
     spr(56, 0, 0, 1, 1)
-    spr(57, FIELD_WIDTH * 8 - 8, 0, 1, 1)
-    spr(72, 0, FIELD_HEIGHT * 8 - 8, 1, 1)
-    spr(73, FIELD_WIDTH * 8 - 8, FIELD_HEIGHT * 8 - 8, 1, 1)
+    spr(57, 184, 0, 1, 1)
+    spr(72, 0, 376, 1, 1)
+    spr(73, 184, 376, 1, 1)
     -- stands
     if teams then
         -- north
         setPalette(teams[1].palette)
-        map(0, 0, - 8 * (3 * FIELD_BUFFER), - 8 * FIELD_BUFFER - 8 * 8, 48, 8)
-        map(48, 0, - 8 * FIELD_BUFFER - 8 * 8,  - 8 * FIELD_BUFFER, 8, 28)
-        map(48, 0, 8 * (FIELD_WIDTH + FIELD_BUFFER),  - 8 * FIELD_BUFFER, 8, 28)
+        map(0, 0, -96, -96, 48, 8)
+        map(48, 0, -96, -32, 8, 28)
+        map(48, 0, 224, -32, 8, 28)
         -- south
         setPalette(teams[2].palette)
-        map(0, 8, - 8 * (3 * FIELD_BUFFER), 8 * (FIELD_HEIGHT + FIELD_BUFFER), 48, 8)
-        map(56, 0, - 8 * FIELD_BUFFER - 8 * 8, 8 * FIELD_HEIGHT/2, 8, 28)
-        map(56, 0, 8 * (FIELD_WIDTH + FIELD_BUFFER), 8 * FIELD_HEIGHT/2, 8, 28)
+        map(0, 8, -96, 416, 48, 8)
+        map(56, 0, -96, 192, 8, 28)
+        map(56, 0, 224, 192, 28)
         resetPalette()
     end
 end
@@ -1016,9 +1012,9 @@ FIELD_LINE_OFFSET = 4
 function initGame(team1, team2, joypadIds)
     bumpWorld = bump.newWorld(8)
     resetPalette()
-    ball = Ball(FIELD_WIDTH * 8 /2, FIELD_HEIGHT * 8 /2)
+    ball = Ball(0, 0)
     local isAway = false
-    if split(TEAMS[team2].palette)[1] == split(TEAMS[team1].palette)[1] then
+    if TEAMS[team2].palette[1] == TEAMS[team1].palette[1] then
         isAway = true
     end
     teams = {
@@ -1030,16 +1026,16 @@ function initGame(team1, team2, joypadIds)
         FieldLine(
             -FIELD_LINE_OFFSET,
             -FIELD_LINE_OFFSET,
-            (FIELD_WIDTH - GOAL_WIDTH)/2 * 8 + FIELD_LINE_OFFSET,
+            (24 - GOAL_WIDTH)/2 * 8 + FIELD_LINE_OFFSET,
             1,
             false,
             teams[2]
         ),
         -- Top right touchline
         FieldLine(
-            8 * (FIELD_WIDTH/2 + GOAL_WIDTH/2),
+            8 * (24/2 + GOAL_WIDTH/2),
             -FIELD_LINE_OFFSET,
-            (FIELD_WIDTH - GOAL_WIDTH)/2 * 8 + FIELD_LINE_OFFSET,
+            (24 - GOAL_WIDTH)/2 * 8 + FIELD_LINE_OFFSET,
             1,
             false,
             teams[2]
@@ -1047,41 +1043,41 @@ function initGame(team1, team2, joypadIds)
         -- Bottom left touchline
         FieldLine(
             -FIELD_LINE_OFFSET,
-            FIELD_HEIGHT * 8 + FIELD_LINE_OFFSET,
-            (FIELD_WIDTH - GOAL_WIDTH)/2 * 8 + FIELD_LINE_OFFSET,
+            48 * 8 + FIELD_LINE_OFFSET,
+            (24 - GOAL_WIDTH)/2 * 8 + FIELD_LINE_OFFSET,
             1,
             false,
             teams[1]
         ),
         -- Bottom right touchline
         FieldLine(
-            8 * (FIELD_WIDTH/2 + GOAL_WIDTH/2),
-            FIELD_HEIGHT * 8 + FIELD_LINE_OFFSET,
-            (FIELD_WIDTH - GOAL_WIDTH)/2 * 8 + FIELD_LINE_OFFSET,
+            8 * (24/2 + GOAL_WIDTH/2),
+            48 * 8 + FIELD_LINE_OFFSET,
+            (24 - GOAL_WIDTH)/2 * 8 + FIELD_LINE_OFFSET,
             1,
             false,
             teams[1]
         ),
         -- Left long line
-        FieldLine(-FIELD_LINE_OFFSET, -FIELD_LINE_OFFSET, 1, FIELD_HEIGHT * 8 + FIELD_LINE_OFFSET * 2),
+        FieldLine(-FIELD_LINE_OFFSET, -FIELD_LINE_OFFSET, 1, 48 * 8 + FIELD_LINE_OFFSET * 2),
         -- Right long line
-        FieldLine(FIELD_WIDTH * 8 + 2, -FIELD_LINE_OFFSET, 1, FIELD_HEIGHT * 8 + FIELD_LINE_OFFSET * 2),
+        FieldLine(24 * 8 + 2, -FIELD_LINE_OFFSET, 1, 48 * 8 + FIELD_LINE_OFFSET * 2),
         -- Goal lines are slightly behind the field lines
-        FieldLine(8 * (FIELD_WIDTH - GOAL_WIDTH)/2 + 2, -FIELD_LINE_OFFSET, GOAL_WIDTH * 8 - 4, 1, true, teams[2]),
-        FieldLine(8 * (FIELD_WIDTH - GOAL_WIDTH)/2 + 2, FIELD_HEIGHT * 8 + FIELD_LINE_OFFSET, GOAL_WIDTH * 8 - 4, 1, true, teams[1]),
+        FieldLine(8 * (24 - GOAL_WIDTH)/2 + 2, -FIELD_LINE_OFFSET, GOAL_WIDTH * 8 - 4, 1, true, teams[2]),
+        FieldLine(8 * (24 - GOAL_WIDTH)/2 + 2, 48 * 8 + FIELD_LINE_OFFSET, GOAL_WIDTH * 8 - 4, 1, true, teams[1]),
     }
     perimeterWalls = {
-        Wall(-FIELD_BUFFER * 8 - 8, -FIELD_BUFFER * 8 - 8, (FIELD_WIDTH + FIELD_BUFFER * 2) * 8, 8),
-        Wall(-FIELD_BUFFER * 8 - 8, -FIELD_BUFFER * 8 - 8, 8, (FIELD_HEIGHT + FIELD_BUFFER * 2) * 8),
-        Wall((FIELD_WIDTH + FIELD_BUFFER) * 8, -FIELD_BUFFER * 8 - 8, 8, (FIELD_HEIGHT + FIELD_BUFFER * 4) * 8),
-        Wall(-FIELD_BUFFER * 8 - 8, (FIELD_HEIGHT + FIELD_BUFFER) * 8, (FIELD_WIDTH + FIELD_BUFFER * 4) * 8, 8),
-        GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, -20, GOAL_WIDTH * 8, 1),
-        GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, FIELD_HEIGHT * 8 + 8, GOAL_WIDTH * 8, 1),
+        Wall(-40, -40, 256, 8),
+        Wall(-40, -40, 8, 448),
+        Wall((24 + 4) * 8, -40, 8, 512),
+        Wall(-40, 416, 256, 8),
+        GoalWall(8 * (24 - GOAL_WIDTH)/2, -20, GOAL_WIDTH * 8, 1),
+        GoalWall(8 * (24 - GOAL_WIDTH)/2, 48 * 8 + 8, GOAL_WIDTH * 8, 1),
         --Side walls
-        GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, -20, 1, 20),
-        GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, FIELD_HEIGHT * 8, 1, 8),
-        GoalWall(8 * (GOAL_WIDTH + (FIELD_WIDTH - GOAL_WIDTH)/2), -20, 1, 20),
-        GoalWall(8 * (GOAL_WIDTH + (FIELD_WIDTH - GOAL_WIDTH)/2), FIELD_HEIGHT * 8, 1, 8),
+        GoalWall(8 * (24 - GOAL_WIDTH)/2, -20, 1, 20),
+        GoalWall(8 * (24 - GOAL_WIDTH)/2, 48 * 8, 1, 8),
+        GoalWall(8 * (GOAL_WIDTH + (24 - GOAL_WIDTH)/2), -20, 1, 20),
+        GoalWall(8 * (GOAL_WIDTH + (24 - GOAL_WIDTH)/2), 48 * 8, 1, 8),
     }
     goalTimer = 0
     ballOutTimer = 0
@@ -1107,7 +1103,7 @@ end
 
 function resetKickOff()
     kickOffDelay = 60
-    ball:setPosition(FIELD_WIDTH * 8 /2, FIELD_HEIGHT * 8 /2)
+    ball:setPosition(96, 192)
     isKickOff = true
     resetPositions(true)
     music(0)
@@ -1248,11 +1244,11 @@ function drawGame()
     camera(cameraX, cameraY)
     drawField()
 
-    local goalX = (FIELD_WIDTH - GOAL_WIDTH)/2
+    local goalX = (24 - GOAL_WIDTH)/2
     spr(7, goalX * 8, -24, 4, 3)
     ball:draw()
     for team in all(teams) do team:draw() end
-    spr(11, goalX * 8, FIELD_HEIGHT * 8 - 12, 4, 3)
+    spr(11, goalX * 8, 48 * 8 - 12, 4, 3)
     camera()
 
     if goalTimer > 0 then
@@ -1303,7 +1299,6 @@ MENU_STATES = {
     TEAMS = 'TEAMS',
 }
 function initMainMenu()
-    cameraY = 96
     menuState = MENU_STATES.MODE
     modeCursorPosition = 0
     p1Cursor = {
@@ -1350,6 +1345,7 @@ function updateMainMenu()
         if btnp(4) then
             selectedMatchMode = MATCH_MODES[modeCursorPosition + 1]
             menuState = MENU_STATES.TEAMS
+            sfx(6)
         end
     else
         if p2Cursor.selected then
@@ -1360,6 +1356,7 @@ function updateMainMenu()
                     p2Team,
                     selectedMatchMode
                 )
+                sfx(6)
             elseif btnp(5) then
                 p2Cursor.selected = false
             end
@@ -1387,7 +1384,7 @@ end
 
 function drawMainMenu()
     cls()
-    camera(32, cameraY)
+    camera(32, 128)
     drawField()
     camera()
 
@@ -1434,7 +1431,7 @@ function drawMainMenu()
             printShadowCentre('ready?', 96)
         end
     elseif menuState == MENU_STATES.MODE then
-        spr(182, 40, 24, 6, 5)
+        spr(182, 40, 16, 6, 5)
         for i, matchMode in ipairs(MATCH_MODES) do
             local color = 5
             if i - 1 == modeCursorPosition then
