@@ -263,14 +263,14 @@ function Ball:move(x, y)
                     end)
                 else
                     -- Kick in
+                    x, y = collision.touch.x, collision.touch.y
+                    if x < FIELD_WIDTH * 8 / 2 then
+                        x = x + 8
+                    else
+                        x = x - 8
+                    end
                     ballOutReset = (function()
-                        local x = collision.touch.x
-                        if x < FIELD_WIDTH * 8 / 2 then
-                            x = x + 8
-                        else
-                            x = x - 8
-                        end
-                        ball:setPosition(x, collision.touch.y)
+                        ball:setPosition(x, y)
                     end)
                 end
                 isFreeKick = true
@@ -757,12 +757,19 @@ end
 
 function Player:canTakeBall(ball)
     local speedFactor = rnd(ball:getSpeed())
+    -- Goalkeeper should have a better chance of saving ball
+    local speedLimit = 0.25
+    if self.isGoalkeeper then
+        speedLimit = 0.5
+    end
+
     return (
+        ballOutTimer == 0 and
         goalTimer == 0 and
         self.ballLostTimer == 0 and
         -- based on the speed of the ball, there's a chance the ball just passes straight through
         -- too hot to handle!
-        speedFactor < 0.5
+        speedFactor < speedLimit
     )
 end
 
@@ -1317,6 +1324,9 @@ function updateTeamSelect()
         elseif btnp(3) then
             p2Cursor.y = p2Cursor.y + 1
         end
+
+        p2Cursor.x = p2Cursor.x % 4
+        p2Cursor.y = p2Cursor.y % 2
     else
         if btnp(4) then
             p1Cursor.selected = true
@@ -1329,11 +1339,15 @@ function updateTeamSelect()
         elseif btnp(3) then
             p1Cursor.y = p1Cursor.y + 1
         end
+
+        p1Cursor.x = p1Cursor.x % 4
+        p1Cursor.y = p1Cursor.y % 2
     end
 end
 
 function drawTeamSelect()
     cls()
+    rectfill(0, 0, 127, 127, 3)
     for y, row in ipairs(TEAM_GRID) do
         for x, team in ipairs(row) do
             spr(TEAMS[team].flags.large, 8 + (x - 1) * 26, 8 + (y - 1) * 18, 3, 2)
