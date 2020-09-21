@@ -137,7 +137,7 @@ end
 Ball = Object:extend()
 Ball.FRICTION = 0.98
 Ball.PASS_SPEED = 2
-Ball.SHOOT_SPEED = 4
+Ball.SHOOT_SPEED = 5
 Ball.SHOOT_TIMER_MAX = 60
 Ball.SHOT_INVICIBILITY = 30
 
@@ -189,6 +189,7 @@ function Ball:move(x, y)
                 isFreeKick = false
                 isKickOff = true
                 setKickOffTeam(collision.other.attackingTeam)
+                music(2)
             else
                 ballOutTimer = BALL_OUT_TIMER_MAX
                 isFreeKick = true
@@ -238,6 +239,8 @@ function Ball:move(x, y)
             local elasticity = -1
             if collision.other:is(GoalWall) then
                 elasticity = -0.25
+            else
+                sfx(5)
             end
             if collision.normal.x ~= 0 then
                 self.velX = self.velX * elasticity
@@ -272,17 +275,19 @@ function Ball:pass(velX, velY)
     self.velY = scale * Ball.PASS_SPEED * velY
     isFreeKick = false
     isKickOff = false
+    sfx(3)
 end
 
 function Ball:shoot(velX, velY)
     self.controllingPlayer.ballLostTimer = Player.BALL_LOST_BY_KICKING_TIMER_MAX 
     self.shootTimer = Ball.SHOOT_TIMER_MAX
     self.controllingPlayer = nil
-    local scale = (0.75 + rnd(0.75))
+    local scale = (0.8 + rnd(0.4))
     self.velX = scale * Ball.SHOOT_SPEED * velX 
     self.velY = scale * Ball.SHOOT_SPEED * velY
     isFreeKick = false
     isKickOff = false
+    sfx(4)
 end
 
 function Ball:draw()
@@ -506,8 +511,7 @@ function Player:updatePassive()
                         centreY - closestOpposingPlayer.y
                     )
                     if
-                        ((distance < 16 and rnd() > 0.7) or
-                        distance < 32 and abs((angleToGoal - angleToPlayer + 0.5) % 1 - 0.5) < 0.2)
+                        distance < 32 and (rnd() > 0.7 or abs((angleToGoal - angleToPlayer + 0.5) % 1 - 0.5) < 0.2)
                     then
                         -- If player is being closed down, either clear the ball (if far from
                         -- goal), shoot (if close to goal) or attempt to pass it to a teammate.
@@ -733,6 +737,10 @@ function Player:canTakeBall(ball)
     end
 
     return (
+        -- player doesn't already have ball
+        ball.controllingPlayer ~= self and
+        -- Harder to take ball if player already has ball.
+        (not ball.controllingPlayer or rnd() > 0.75) and
         ballOutTimer == 0 and
         goalTimer == 0 and
         self.ballLostTimer == 0 and
@@ -970,7 +978,7 @@ function drawField()
         7
     )
     -- Ds
-    clip(0, HEIGHT_18_YARD * 8 - cameraY, 128, (FIELD_HEIGHT - HEIGHT_18_YARD * 2) * 8)
+    clip(0, HEIGHT_18_YARD * 8 - cameraY + 1, 128, (FIELD_HEIGHT - HEIGHT_18_YARD * 2) * 8)
     circ(FIELD_WIDTH * 8 / 2, 0, 7 * 8, 7)
     circ(FIELD_WIDTH * 8 / 2, FIELD_HEIGHT * 8, 7 * 8, 7)
     clip()
@@ -983,8 +991,8 @@ function drawField()
     spr(72, 0, FIELD_HEIGHT * 8 - 8, 1, 1)
     spr(73, FIELD_WIDTH * 8 - 8, FIELD_HEIGHT * 8 - 8, 1, 1)
     -- stands
-    -- north
     if teams then
+        -- north
         setPalette(teams[1].palette)
         map(0, 0, - 8 * (3 * FIELD_BUFFER), - 8 * FIELD_BUFFER - 8 * 8, 48, 8)
         map(48, 0, - 8 * FIELD_BUFFER - 8 * 8,  - 8 * FIELD_BUFFER, 8, 28)
@@ -1000,7 +1008,7 @@ end
 
 GOAL_TIMER_MAX = 300
 BALL_OUT_TIMER_MAX = 180
-HALF_LENGTH = 180
+HALF_LENGTH = 120
 GAME_TIME_SCALE = 2700 -- 45 * 60
 HALF_TIME_TIMER_MAX = 300
 
@@ -1070,10 +1078,10 @@ function initGame(team1, team2, joypadIds)
         GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, -20, GOAL_WIDTH * 8, 1),
         GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, FIELD_HEIGHT * 8 + 8, GOAL_WIDTH * 8, 1),
         --Side walls
-        -- GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, -20, 1, 20),
-        -- GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, FIELD_HEIGHT * 8, 1, 8),
-        -- GoalWall(8 * (GOAL_WIDTH + (FIELD_WIDTH - GOAL_WIDTH)/2), -20, 1, 20),
-        -- GoalWall(8 * (GOAL_WIDTH + (FIELD_WIDTH - GOAL_WIDTH)/2), FIELD_HEIGHT * 8, 1, 8),
+        GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, -20, 1, 20),
+        GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, FIELD_HEIGHT * 8, 1, 8),
+        GoalWall(8 * (GOAL_WIDTH + (FIELD_WIDTH - GOAL_WIDTH)/2), -20, 1, 20),
+        GoalWall(8 * (GOAL_WIDTH + (FIELD_WIDTH - GOAL_WIDTH)/2), FIELD_HEIGHT * 8, 1, 8),
     }
     goalTimer = 0
     ballOutTimer = 0
@@ -1102,6 +1110,7 @@ function resetKickOff()
     ball:setPosition(FIELD_WIDTH * 8 /2, FIELD_HEIGHT * 8 /2)
     isKickOff = true
     resetPositions(true)
+    music(0)
 end
 
 function resetPositions(isKickOff)
@@ -1314,6 +1323,7 @@ end
 function updateCursor(cursor)
     if btnp(4) then
         cursor.selected = true
+        sfx(6)
     elseif btnp(0) then
         cursor.x = cursor.x - 1
     elseif btnp(1) then
