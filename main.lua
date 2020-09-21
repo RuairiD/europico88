@@ -1,5 +1,4 @@
 STATES = {
-    TITLE = 'TITLE',
     MAIN_MENU = 'MAIN_MENU',
     GAME = 'GAME',
 }
@@ -7,59 +6,38 @@ STATES = {
 TEAMS = {
     SWE = {
         palette = "10, 12, 1, 10",
-        flags = {
-            icon = 80,
-            large = 96,
-        },
+        flags = { 80, 96 },
     },
     GER = {
         palette = "7, 0, 8, 0",
-        flags = {
-            icon = 83,
-            large = 128,
-        },
+        flags = { 83, 128 },
     },
     DEN = {
         palette = "8, 7, 0, 8",
-        flags = {
-            icon = 81,
-            large = 99,
-        },
+        flags = { 81, 99 },
     },
     NED = {
         palette = "9, 7, 7, 9",
-        flags = {
-            icon = 82,
-            large = 102,
-        },
+        flags = { 82, 102 },
+        skinSwap = "7, 8, 9",
     },
     SCO = {
         palette = "1, 7, 7, 2",
-        flags = {
-            icon = 85,
-            large = 134,
-        },
+        flags = { 85, 134 },
     },
     ENG = {
         palette = "7, 1, 8, 7",
-        flags = {
-            icon = 87,
-            large = 163,
-        },
+        flags = { 87, 163 },
+        skinSwap = "4, 6",
     },
     FRA = {
         palette = "12, 7, 7, 12",
-        flags = {
-            icon = 84,
-            large = 131,
-        },
+        flags = { 84, 131 },
+        skinSwap = "2, 3",
     },
     CIS = {
         palette = "8, 7, 7, 8",
-        flags = {
-            icon = 86,
-            large = 160,
-        },
+        flags = { 86, 160 },
     },
 }
 
@@ -96,7 +74,8 @@ function getDistance(x1, y1, x2, y2)
 end
 
 KIT_PALETTE = { 10, 12 }
-function setPalette(palette, offset, isAway)
+SKIN_SWAP_PALETTE = { [15] = 4, [4] = 0 }
+function setPalette(palette, offset, isAway, skinSwap)
     if not offset then
         offset = 0
     end
@@ -110,6 +89,15 @@ function setPalette(palette, offset, isAway)
             original,
             palette[fixedOffset + (i + offset - 1) % 2 + 1]
         )
+    end
+
+    if skinSwap then
+        for original, replacement in pairs(SKIN_SWAP_PALETTE) do
+            pal(
+                original,
+                replacement
+            )
+        end
     end
 end
 
@@ -298,15 +286,15 @@ function Ball:shoot(velX, velY)
 end
 
 function Ball:draw()
-    circfill(self.x + 1, self.y + 1, 1.5, 7)
+    spr(58, self.x - 1, self.y - 1)
 end
 
 Player = Object:extend()
 Player.DIRECTION_DATA = {
-    N = { spriteIndex = 16, xFlip = false, velX = 0, velY = -1, ballXOffset = 2, ballYOffset = -3 },
-    S = { spriteIndex = 0, xFlip = false, velX = 0, velY = 1, ballXOffset = 2, ballYOffset = 8 },
-    E = { spriteIndex = 32, xFlip = true, velX = 1, velY = 0, ballXOffset = 8, ballYOffset = 0 },
-    W = { spriteIndex = 32, xFlip = false, velX = -1, velY = 0, ballXOffset = -3, ballYOffset = 0 },
+    N = { spriteIndex = 16, xFlip = false, velX = 0, velY = -1, ballXOffset = 2, ballYOffset = -2 },
+    S = { spriteIndex = 0, xFlip = false, velX = 0, velY = 1, ballXOffset = 2, ballYOffset = 7 },
+    E = { spriteIndex = 32, xFlip = true, velX = 1, velY = 0, ballXOffset = 7, ballYOffset = 0 },
+    W = { spriteIndex = 32, xFlip = false, velX = -1, velY = 0, ballXOffset = -2, ballYOffset = 0 },
 }
 -- If player loses the ball by tackle, they can't reclaim it for a short period.
 -- Prevents players trading the ball over and over.
@@ -809,6 +797,7 @@ function Team:new(teamId, joypadId, playingUp, isAway)
     self.teamId = teamId
     self.teamData = TEAMS[teamId]
     self.palette = split(self.teamData.palette)
+    self.skinSwap = split(self.teamData.skinSwap)
     self.playingUp = playingUp
     self.isAway = isAway
     self.joypadId = joypadId
@@ -895,13 +884,18 @@ end
 
 Team.CURSOR_COLORS = { 8, 12 }
 function Team:draw()
-    setPalette(self.palette, 0, self.isAway)
     for i, player in ipairs(self.players) do
+        resetPalette()
         if self.joypadId ~= nil and i == self.selectedPlayerIndex then
-            resetPalette()
             circ(player.x + 3, player.y + 4, 3, Team.CURSOR_COLORS[self.joypadId + 1])
-            setPalette(self.palette, 0, self.isAway)
         end
+        local swap = false
+        for c in all(self.skinSwap) do
+            if c == i then
+                swap = true
+            end
+        end
+        setPalette(self.palette, 0, self.isAway, swap)
         player:draw()
     end
     resetPalette()
@@ -1152,7 +1146,7 @@ function updateGame()
                 add(updatedTeams, i)
             end
         end
-        if goalTimer == 0 and kickOffDelay == 0 then
+        if goalTimer == 0 and not isFreeKick and not isKickOff then
             gameTimer = gameTimer + 1
             if gameTimer == HALF_LENGTH * 60 then
                 halfTimeTimer = HALF_TIME_TIMER_MAX
@@ -1210,8 +1204,11 @@ end
 
 function drawScoreDisplay()
     for i, team in ipairs(teams) do
-        spr(team.teamData.flags.icon, 8, i * 8)
-        printShadow(team.goals, 18, i * 8 + 2)
+        setPalette(team.palette, 0, team.isAway)
+        spr(88, 8, i * 8)
+        resetPalette()
+        spr(team.teamData.flags[1], 14, i * 8)
+        printShadow(team.goals, 24, i * 8 + 2)
     end
     local scaledGameTimer = (gameTimer / (60 * HALF_LENGTH)) * GAME_TIME_SCALE
     local mins = tostr(flr(scaledGameTimer / 60))
@@ -1253,10 +1250,11 @@ function drawGame()
         -- GOOOOAAALLLL
         setPalette(
             goalScoringTeam.palette,
-            flr(goalTimer/4) % 2
+            flr(goalTimer/4) % 2,
+            goalScoringTeam.isAway
         )
-        for i=0,8,2 do
-            spr(i + 48, 32 + i * 16, 56, 2, 2)
+        for i=0,7,2 do
+            spr(i + 48, 32 + i * 8, 56, 2, 2)
         end
         resetPalette()
     end
@@ -1271,8 +1269,9 @@ function drawGame()
         else
             print('half time', 46, 60, 7)
         end
+        -- TODO show score under banner instead of
+        -- in normal corner display
     end
-
     drawScoreDisplay()
 end
 
@@ -1387,7 +1386,7 @@ function drawMainMenu()
         for y, row in ipairs(TEAM_GRID) do
             for x, team in ipairs(row) do
                 local px, py = 13 + (x - 1) * 26, 32 + (y - 1) * 18
-                spr(TEAMS[team].flags.large, px, py, 3, 2)
+                spr(TEAMS[team].flags[2], px, py, 3, 2)
                 rect(px, py, px + 23, py + 15, 7)
             end
         end
@@ -1410,12 +1409,12 @@ function drawMainMenu()
         end
 
         if p1Cursor.selected then
-            spr(TEAMS[p1Team].flags.large, 28, 72, 3, 2)
+            spr(TEAMS[p1Team].flags[2], 28, 72, 3, 2)
         end
         rect(28, 72, 51, 87, 7)
 
         if p2Cursor.selected then
-            spr(TEAMS[p2Team].flags.large, 76, 72, 3, 2)
+            spr(TEAMS[p2Team].flags[2], 76, 72, 3, 2)
         end
         rect(76, 72, 99, 87, 7)
 
@@ -1425,7 +1424,7 @@ function drawMainMenu()
             printShadowCentre('ready?', 96)
         end
     elseif menuState == MENU_STATES.MODE then
-        spr(198, 40, 32, 6, 4)
+        spr(182, 40, 24, 6, 5)
         for i, matchMode in ipairs(MATCH_MODES) do
             local color = 5
             if i - 1 == modeCursorPosition then
@@ -1434,6 +1433,7 @@ function drawMainMenu()
             printShadowCentre(matchMode[3], 64 + 8 * i, color)
         end
     end
+    printShadowCentre('\x8e accept - \x97 back', 120)
     resetPalette()
 end
 
