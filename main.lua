@@ -1,101 +1,61 @@
 STATES = {
     TITLE = 'TITLE',
-    TEAM_SELECT = 'TEAM_SELECT',
+    MAIN_MENU = 'MAIN_MENU',
     GAME = 'GAME',
 }
 
 TEAMS = {
     SWE = {
-        palette = {
-            -- Shirt
-            [10] = 10,
-            -- Shorts
-            [12] = 12,
-        },
+        palette = "10, 12, 1, 10",
         flags = {
             icon = 80,
             large = 96,
         },
     },
     GER = {
-        palette = {
-            -- Shirt
-            [10] = 7,
-            -- Shorts
-            [12] = 0,
-        },
+        palette = "7, 0, 8, 0",
         flags = {
             icon = 83,
             large = 128,
         },
     },
     DEN = {
-        palette = {
-            -- Shirt
-            [10] = 8,
-            -- Shorts
-            [12] = 7,
-        },
+        palette = "8, 7, 0, 8",
         flags = {
             icon = 81,
             large = 99,
         },
     },
     NED = {
-        palette = {
-            -- Shirt
-            [10] = 9,
-            -- Shorts
-            [12] = 7,
-        },
+        palette = "9, 7, 7, 9",
         flags = {
             icon = 82,
             large = 102,
         },
     },
     SCO = {
-        palette = {
-            -- Shirt
-            [10] = 1,
-            -- Shorts
-            [12] = 7,
-        },
+        palette = "1, 7, 7, 2",
         flags = {
             icon = 85,
             large = 134,
         },
     },
     ENG = {
-        palette = {
-            -- Shirt
-            [10] = 7,
-            -- Shorts
-            [12] = 1,
-        },
+        palette = "7, 1, 8, 7",
         flags = {
             icon = 87,
             large = 163,
         },
     },
     FRA = {
-        palette = {
-            -- Shirt
-            [10] = 12,
-            -- Shorts
-            [12] = 7,
-        },
+        palette = "12, 7, 7, 12",
         flags = {
             icon = 84,
             large = 131,
         },
     },
     CIS = {
-        palette = {
-            -- Shirt
-            [10] = 8,
-            -- Shorts
-            [12] = 7,
-        },
+        palette = "8, 7, 7, 8",
         flags = {
             icon = 86,
             large = 160,
@@ -115,9 +75,16 @@ FIELD_BUFFER = 4
 FIELD_WIDTH = 24
 FIELD_HEIGHT = 48
 
-function printShadow(text, x, y)
+function printShadowCentre(text, y, color)
+    printShadow(text, (128 - #text * 4)/2, y, color)
+end
+
+function printShadow(text, x, y, color)
+    if not color then
+        color = 7
+    end
     print(text, x, y + 1, 0)
-    print(text, x, y, 7)
+    print(text, x, y, color)
 end
 
 function getDistance(x1, y1, x2, y2)
@@ -128,18 +95,21 @@ function getDistance(x1, y1, x2, y2)
     )
 end
 
-function setPalette(palette, offset)
+KIT_PALETTE = { 10, 12 }
+function setPalette(palette, offset, isAway)
     if not offset then
         offset = 0
     end
-    local paletteToUse = {}
-    local originals = {}
-    for original, _ in pairs(palette) do
-        add(originals, original)
+    fixedOffset = 0
+    if isAway then
+        fixedOffset = 2
     end
     
-    for i, original in ipairs(originals) do
-        pal(original, palette[originals[(i + offset - 1) % #originals + 1]])
+    for i, original in ipairs(KIT_PALETTE) do
+        pal(
+            original,
+            palette[fixedOffset + (i + offset - 1) % 2 + 1]
+        )
     end
 end
 
@@ -223,29 +193,18 @@ end
 function Ball:move(x, y)
     self.x, self.y, collisions, _ = bumpWorld:move(self, x, y, self.moveFilter)
     for collision in all(collisions) do
-        if collision.other:is(FieldLine) then
+        if collision.other:is(FieldLine) and ballOutTimer == 0 and goalTimer == 0 then
             if collision.other.isGoal then
-                if goalTimer == 0 then
-                    goalTimer = GOAL_TIMER_MAX
-                    collision.other.attackingTeam.goals = collision.other.attackingTeam.goals + 1
-                    goalScoringTeam = collision.other.attackingTeam
-                    isFreeKick = false
-                    isKickOff = true
-                    kickOffDelay = 30 + flr(rnd(60))
-
-                    kickOffTeam = teams[1]
-                    if collision.other.attackingTeam == teams[1] then
-                        kickOffTeam = teams[2]
-                    end
-                end
-            elseif ballOutTimer == 0 and goalTimer == 0 then
+                goalTimer = GOAL_TIMER_MAX
+                collision.other.attackingTeam.goals = collision.other.attackingTeam.goals + 1
+                goalScoringTeam = collision.other.attackingTeam
+                isFreeKick = false
+                isKickOff = true
+                setKickOffTeam(collision.other.attackingTeam)
+            else
                 ballOutTimer = BALL_OUT_TIMER_MAX
-                kickOffDelay = 30 + flr(rnd(60))
                 isFreeKick = true
-                kickOffTeam = teams[1]
-                if self.lastControllingPlayer.team == teams[1] then
-                    kickOffTeam = teams[2]
-                end
+                setKickOffTeam(self.lastControllingPlayer.team)
                 local x, y
                 if collision.other.attackingTeam then
                     -- Corner or goal kick
@@ -542,7 +501,6 @@ function Player:updatePassive()
                             ball:shoot(-cos(angleToGoal + rnd(0.1) - 0.05), -sin(angleToGoal + rnd(0.1) - 0.05))
                         elseif distance < 48 then
                             ball:pass(-cos(passAngle), -sin(passAngle))
-                            self.team.passes = self.team.passes + 1
                         else
                             ball:shoot(-cos(angleToGoal + rnd(0.1) - 0.05), -sin(angleToGoal + rnd(0.1) - 0.05))
                         end
@@ -550,7 +508,6 @@ function Player:updatePassive()
                 elseif rnd(distanceToGoal) < 0.5 then
                     -- Computer shots are less accurate than player shots for balance
                     ball:shoot(-cos(angleToGoal + rnd(0.15) - 0.075), -sin(angleToGoal + rnd(0.15) - 0.075))
-                    self.team.shots = self.team.shots + 1
                 else
                     -- Check for pass
                     local closestOpposingPlayer, distance = self:findClosestPlayer(
@@ -569,12 +526,8 @@ function Player:updatePassive()
                         if distanceToGoal >  2/3 * FIELD_HEIGHT * 8 or distanceToGoal < 64 then
                             -- Wild shot/clearance
                             ball:shoot(-cos(angleToGoal + rnd(0.3) - 0.15), -sin(angleToGoal + rnd(0.3) - 0.15))
-                            if distanceToGoal < 64 then
-                                self.team.shots = self.team.shots + 1
-                            end
                         elseif self.ballReceivedTimer == 0 then
                             ball:pass(-cos(passAngle), -sin(passAngle))
-                            self.team.passes = self.team.passes + 1
                         end
                     end
                 end
@@ -821,12 +774,7 @@ end
 
 Goalkeeper = Player:extend()
 
-Goalkeeper.PALETTE = {
-    -- Shirt
-    [10] = 2,
-    -- Shorts
-    [12] = 0,
-}
+Goalkeeper.PALETTE = { 2,  0 }
 
 function Goalkeeper:draw()
     setPalette(Goalkeeper.PALETTE)
@@ -837,37 +785,48 @@ function Goalkeeper:draw()
         1, 1,
         Player.DIRECTION_DATA[self.direction].xFlip
     )
-    setPalette(self.team.teamData.palette)
+    setPalette(self.team.palette, 0, self.team.isAway)
 end
 
 Team = Object:extend()
 
-function Team:new(teamId, joypadId, playingUp)
+Team.GRID_POSITIONS = {
+        -- Defence
+    { 1, 2 }, -- RB
+    { 2, 2 }, -- CB
+    { 3, 2 }, -- CB
+    { 4, 2 }, -- LB
+    -- Midfield
+    { 2.5, 3 }, -- CDM
+    { 1, 4 }, -- RW
+    { 3.5, 4 }, -- CAM
+    { 4, 4 }, -- LW
+    -- Forwards
+    { 2, 5 }, -- SC
+    { 3, 5 }, -- SC
+}
+function Team:new(teamId, joypadId, playingUp, isAway)
     self.teamId = teamId
     self.teamData = TEAMS[teamId]
+    self.palette = split(self.teamData.palette)
     self.playingUp = playingUp
+    self.isAway = isAway
     self.joypadId = joypadId
     self.players = {
         -- GK
         Goalkeeper(self, 1, 1, joypadId, true),
-        -- Defence
-        Player(self, 1, 2, joypadId, false),
-        Player(self, 2, 1, joypadId, false),
-        Player(self, 3, 1, joypadId, false),
-        Player(self, 4, 2, joypadId, false),
-        -- Midfield
-        Player(self, 1, 4, joypadId, false),
-        Player(self, 2, 2, joypadId, false),
-        Player(self, 3, 3, joypadId, false),
-        Player(self, 4, 4, joypadId, false),
-        -- Forwards
-        Player(self, 2, 5, joypadId, false),
-        Player(self, 3, 5, joypadId, false),
     }
+    for pos in all(Team.GRID_POSITIONS) do
+        add(self.players, Player(
+            self,
+            pos[1],
+            pos[2],
+            joypadId,
+            false
+        ))
+    end
     self.selectedPlayerIndex = 1
     self.goals = 0
-    self.shots = 0
-    self.passes = 0
 end
 
 function Team:resetPosition(isKickOff, targetX, targetY)
@@ -884,12 +843,9 @@ function Team:findPlayerClosestToBall(excludePlayerId)
     local closestPlayerIndex, timeToBall = excludePlayerId, 9999
     for i, player in ipairs(self.players) do
         if i ~= excludePlayerId and not player.isGoalkeeper then
-            local dx = abs(player.x - ball.x)
-            local dy = abs(player.y - ball.y)
-            local dvx = 1 - ball.velX
-            local dvy = 1 - ball.velY
             local candidateDistance = getDistance(
-                dx * dvx, dy * dvy,
+                abs(player.x - ball.x) * (1 - ball.velX),
+                abs(player.y - ball.y) * (1 - ball.velY),
                 0, 0
             )
             if candidateDistance < timeToBall then
@@ -939,18 +895,12 @@ end
 
 Team.CURSOR_COLORS = { 8, 12 }
 function Team:draw()
-    setPalette(self.teamData.palette)
+    setPalette(self.palette, 0, self.isAway)
     for i, player in ipairs(self.players) do
-        if self.joypadId ~= nil then
-            -- Show a solid circle for currently selected player,
-            -- otherwise show a hollow circle.
-            local circFunc = circ
-            if i == self.selectedPlayerIndex then
-                circFunc = circfill
-            end
+        if self.joypadId ~= nil and i == self.selectedPlayerIndex then
             resetPalette()
-            circFunc(player.x + 3, player.y + 4, 3, Team.CURSOR_COLORS[self.joypadId + 1])
-            setPalette(self.teamData.palette)
+            circ(player.x + 3, player.y + 4, 3, Team.CURSOR_COLORS[self.joypadId + 1])
+            setPalette(self.palette, 0, self.isAway)
         end
         player:draw()
     end
@@ -1033,24 +983,31 @@ function drawField()
     -- halfway line
     line(0, FIELD_HEIGHT * 8 / 2, FIELD_WIDTH * 8 - 1, FIELD_HEIGHT * 8 / 2, 7)
     circ(FIELD_WIDTH * 8 / 2, FIELD_HEIGHT * 8 / 2, 32, 7)
+    -- corners
+    spr(56, 0, 0, 1, 1)
+    spr(57, FIELD_WIDTH * 8 - 8, 0, 1, 1)
+    spr(72, 0, FIELD_HEIGHT * 8 - 8, 1, 1)
+    spr(73, FIELD_WIDTH * 8 - 8, FIELD_HEIGHT * 8 - 8, 1, 1)
     -- stands
     -- north
-    setPalette(teams[1].teamData.palette)
-    map(0, 0, - 8 * (3 * FIELD_BUFFER), - 8 * FIELD_BUFFER - 8 * 8, 48, 8)
-    map(48, 0, - 8 * FIELD_BUFFER - 8 * 8,  - 8 * FIELD_BUFFER, 8, 28)
-    map(48, 0, 8 * (FIELD_WIDTH + FIELD_BUFFER),  - 8 * FIELD_BUFFER, 8, 28)
-    -- south
-    setPalette(teams[2].teamData.palette)
-    map(0, 8, - 8 * (3 * FIELD_BUFFER), 8 * (FIELD_HEIGHT + FIELD_BUFFER), 48, 8)
-    map(56, 0, - 8 * FIELD_BUFFER - 8 * 8, 8 * FIELD_HEIGHT/2, 8, 28)
-    map(56, 0, 8 * (FIELD_WIDTH + FIELD_BUFFER), 8 * FIELD_HEIGHT/2, 8, 28)
-    resetPalette()
+    if teams then
+        setPalette(teams[1].palette)
+        map(0, 0, - 8 * (3 * FIELD_BUFFER), - 8 * FIELD_BUFFER - 8 * 8, 48, 8)
+        map(48, 0, - 8 * FIELD_BUFFER - 8 * 8,  - 8 * FIELD_BUFFER, 8, 28)
+        map(48, 0, 8 * (FIELD_WIDTH + FIELD_BUFFER),  - 8 * FIELD_BUFFER, 8, 28)
+        -- south
+        setPalette(teams[2].palette)
+        map(0, 8, - 8 * (3 * FIELD_BUFFER), 8 * (FIELD_HEIGHT + FIELD_BUFFER), 48, 8)
+        map(56, 0, - 8 * FIELD_BUFFER - 8 * 8, 8 * FIELD_HEIGHT/2, 8, 28)
+        map(56, 0, 8 * (FIELD_WIDTH + FIELD_BUFFER), 8 * FIELD_HEIGHT/2, 8, 28)
+        resetPalette()
+    end
 end
 
 GOAL_TIMER_MAX = 300
 BALL_OUT_TIMER_MAX = 180
 HALF_LENGTH = 180
-GAME_TIME_SCALE = 45 * 60
+GAME_TIME_SCALE = 2700 -- 45 * 60
 HALF_TIME_TIMER_MAX = 300
 
 FIELD_LINE_OFFSET = 4
@@ -1058,9 +1015,13 @@ function initGame(team1, team2, joypadIds)
     bumpWorld = bump.newWorld(8)
     resetPalette()
     ball = Ball(FIELD_WIDTH * 8 /2, FIELD_HEIGHT * 8 /2)
+    local isAway = false
+    if split(TEAMS[team2].palette)[1] == split(TEAMS[team1].palette)[1] then
+        isAway = true
+    end
     teams = {
-        Team(team1, joypadIds[1], false),
-        Team(team2, joypadIds[2], true),
+        Team(team1, joypadIds[1], false, false),
+        Team(team2, joypadIds[2], true, isAway),
     }
     fieldLines = {
         -- Top left touchline
@@ -1115,10 +1076,10 @@ function initGame(team1, team2, joypadIds)
         GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, -20, GOAL_WIDTH * 8, 1),
         GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, FIELD_HEIGHT * 8 + 8, GOAL_WIDTH * 8, 1),
         --Side walls
-        GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, -20, 1, 20),
-        GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, FIELD_HEIGHT * 8, 1, 8),
-        GoalWall(8 * (GOAL_WIDTH + (FIELD_WIDTH - GOAL_WIDTH)/2), -20, 1, 20),
-        GoalWall(8 * (GOAL_WIDTH + (FIELD_WIDTH - GOAL_WIDTH)/2), FIELD_HEIGHT * 8, 1, 8),
+        -- GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, -20, 1, 20),
+        -- GoalWall(8 * (FIELD_WIDTH - GOAL_WIDTH)/2, FIELD_HEIGHT * 8, 1, 8),
+        -- GoalWall(8 * (GOAL_WIDTH + (FIELD_WIDTH - GOAL_WIDTH)/2), -20, 1, 20),
+        -- GoalWall(8 * (GOAL_WIDTH + (FIELD_WIDTH - GOAL_WIDTH)/2), FIELD_HEIGHT * 8, 1, 8),
     }
     goalTimer = 0
     ballOutTimer = 0
@@ -1128,6 +1089,14 @@ function initGame(team1, team2, joypadIds)
     kickOffTeam = teams[1]
 
     resetKickOff()
+end
+
+function setKickOffTeam(nonKickOffTeam)
+    kickOffDelay = 30 + flr(rnd(60))
+    kickOffTeam = teams[1]
+    if nonKickOffTeam == teams[1] then
+        kickOffTeam = teams[2]
+    end
 end
 
 function isFullTime()
@@ -1232,6 +1201,11 @@ function updateGame()
     if halfTimeTimer == 0 and not isFullTime() then
         ball:update()
     end
+
+    if isFullTime() and btpn(4) then
+        state = STATES.MAIN_MENU
+        initMainMenu()
+    end
 end
 
 function drawScoreDisplay()
@@ -1278,13 +1252,12 @@ function drawGame()
     if goalTimer > 0 then
         -- GOOOOAAALLLL
         setPalette(
-            goalScoringTeam.teamData.palette,
+            goalScoringTeam.palette,
             flr(goalTimer/4) % 2
         )
-        spr(48, 32, 56, 2, 2)
-        spr(50, 48, 56, 2, 2)
-        spr(52, 64, 56, 2, 2)
-        spr(54, 80, 56, 2, 2)
+        for i=0,8,2 do
+            spr(i + 48, 32 + i * 16, 56, 2, 2)
+        end
         resetPalette()
     end
 
@@ -1311,102 +1284,167 @@ TEAM_GRID = {
 }
 MATCH_MODES = {
     -- P1 vs P2
-    P1vsP2 = { 0, 1 },
+    { 0, 1, 'P1 vs P2' },
     -- P1 vs CPU
-    P1vsCPU = { 0, nil },
+    { 0, nil, 'P1 vs CPU' },
     -- CPI vs CPU
-    CPUvsCPU = { nil, nil },
+    { nil, nil, 'CPU vs CPU' },
 }
-selectedMatchMode = 'P1vsCPU'
-function initTeamSelect()
+MENU_STATES = {
+    MODE = 'MODE',
+    TEAMS = 'TEAMS',
+}
+function initMainMenu()
+    cameraY = 96
+    menuState = MENU_STATES.MODE
+    modeCursorPosition = 0
     p1Cursor = {
         x = 0,
         y = 0,
-        selected = false,
+        -- Commented out for brevity
+        -- selected = false,
     }
     p2Cursor = {
         x = 0,
         y = 0,
-        selected = false,
+        -- Commented out for brevity
+        -- selected = false,
     }
 end
 
-function updateTeamSelect()
-    if p1Cursor.selected then
-        if btnp(5) then
-            p1Cursor.selected = false
-        elseif btnp(4) then
-            p2Cursor.selected = true
-            state = STATES.GAME
-            initGame(
-                TEAM_GRID[p1Cursor.y + 1][p1Cursor.x + 1],
-                TEAM_GRID[p2Cursor.y + 1][p2Cursor.x + 1],
-                MATCH_MODES[selectedMatchMode]
-            )
-        elseif btnp(0) then
-            p2Cursor.x = p2Cursor.x - 1
-        elseif btnp(1) then
-            p2Cursor.x = p2Cursor.x + 1
-        elseif btnp(2) then
-            p2Cursor.y = p2Cursor.y - 1
-        elseif btnp(3) then
-            p2Cursor.y = p2Cursor.y + 1
-        end
+function updateCursor(cursor)
+    if btnp(4) then
+        cursor.selected = true
+    elseif btnp(0) then
+        cursor.x = cursor.x - 1
+    elseif btnp(1) then
+        cursor.x = cursor.x + 1
+    elseif btnp(2) then
+        cursor.y = cursor.y - 1
+    elseif btnp(3) then
+        cursor.y = cursor.y + 1
+    end
 
-        p2Cursor.x = p2Cursor.x % 4
-        p2Cursor.y = p2Cursor.y % 2
-    else
+    cursor.x = cursor.x % 4
+    cursor.y = cursor.y % 2
+end
+
+function updateMainMenu()
+    if menuState == MENU_STATES.MODE then
+        if btnp(2) then
+            modeCursorPosition = modeCursorPosition - 1
+        elseif btnp(3) then
+            modeCursorPosition = modeCursorPosition + 1
+        end
+        modeCursorPosition = modeCursorPosition % 3
+
         if btnp(4) then
-            p1Cursor.selected = true
-        elseif btnp(0) then
-            p1Cursor.x = p1Cursor.x - 1
-        elseif btnp(1) then
-            p1Cursor.x = p1Cursor.x + 1
-        elseif btnp(2) then
-            p1Cursor.y = p1Cursor.y - 1
-        elseif btnp(3) then
-            p1Cursor.y = p1Cursor.y + 1
+            selectedMatchMode = MATCH_MODES[modeCursorPosition + 1]
+            menuState = MENU_STATES.TEAMS
         end
-
-        p1Cursor.x = p1Cursor.x % 4
-        p1Cursor.y = p1Cursor.y % 2
+    else
+        if p2Cursor.selected then
+            if btnp(4) then
+                state = STATES.GAME
+                initGame(
+                    p1Team,
+                    p2Team,
+                    selectedMatchMode
+                )
+            elseif btnp(5) then
+                p2Cursor.selected = false
+            end
+        elseif p1Cursor.selected then
+            if btnp(5) then
+                p1Cursor.selected = false
+            else
+                updateCursor(p2Cursor)
+                if btnp(4) then
+                    p2Team = TEAM_GRID[p2Cursor.y + 1][p2Cursor.x + 1]
+                end
+            end
+        else
+            if btnp(5) then
+                menuState = MENU_STATES.MODE
+            else
+                updateCursor(p1Cursor)
+                if btnp(4) then
+                    p1Team = TEAM_GRID[p1Cursor.y + 1][p1Cursor.x + 1]
+                end
+            end
+        end
     end
 end
 
-function drawTeamSelect()
+function drawMainMenu()
     cls()
-    rectfill(0, 0, 127, 127, 3)
-    for y, row in ipairs(TEAM_GRID) do
-        for x, team in ipairs(row) do
-            spr(TEAMS[team].flags.large, 8 + (x - 1) * 26, 8 + (y - 1) * 18, 3, 2)
-        end
-    end
+    camera(32, cameraY)
+    drawField()
+    camera()
 
-    palt(0, false)
-    if p1Cursor.selected then
-        if selectedMatchMode == 'P1vsP2' then
-            spr(195, 8 + p2Cursor.x * 26, 8 + p2Cursor.y * 18, 3, 2)
-        else
-            spr(224, 8 + p2Cursor.x * 26, 8 + p2Cursor.y * 18, 3, 2)
+    if menuState == MENU_STATES.TEAMS then
+        printShadowCentre(selectedMatchMode[3], 8)
+        for y, row in ipairs(TEAM_GRID) do
+            for x, team in ipairs(row) do
+                local px, py = 13 + (x - 1) * 26, 32 + (y - 1) * 18
+                spr(TEAMS[team].flags.large, px, py, 3, 2)
+                rect(px, py, px + 23, py + 15, 7)
+            end
         end
-    else
-        if selectedMatchMode == 'CPUvsCPU' then
-            spr(224, 8 + p1Cursor.x * 26, 8 + p1Cursor.y * 18, 3, 2)
+
+        palt(0, false)
+        if p1Cursor.selected then
+            local cursorX, cursorY = 13 + p2Cursor.x * 26, 32 + p2Cursor.y * 18
+            if selectedMatchMode[3] == 'P1 vs P2' then
+                spr(195, cursorX, cursorY, 3, 2)
+            else
+                spr(224, cursorX, cursorY, 3, 2)
+            end
         else
-            spr(192, 8 + p1Cursor.x * 26, 8 + p1Cursor.y * 18, 3, 2)
+            local cursorX, cursorY = 13 + p1Cursor.x * 26, 32 + p1Cursor.y * 18
+            if selectedMatchMode[3] == 'CPU vs CPU' then
+                spr(224, cursorX, cursorY, 3, 2)
+            else
+                spr(192, cursorX, cursorY, 3, 2)
+            end
+        end
+
+        if p1Cursor.selected then
+            spr(TEAMS[p1Team].flags.large, 28, 72, 3, 2)
+        end
+        rect(28, 72, 51, 87, 7)
+
+        if p2Cursor.selected then
+            spr(TEAMS[p2Team].flags.large, 76, 72, 3, 2)
+        end
+        rect(76, 72, 99, 87, 7)
+
+        printShadowCentre('vs', 78)
+
+        if p1Cursor.selected and p2Cursor.selected then
+            printShadowCentre('ready?', 96)
+        end
+    elseif menuState == MENU_STATES.MODE then
+        spr(198, 40, 32, 6, 4)
+        for i, matchMode in ipairs(MATCH_MODES) do
+            local color = 5
+            if i - 1 == modeCursorPosition then
+                color = 7
+            end
+            printShadowCentre(matchMode[3], 64 + 8 * i, color)
         end
     end
     resetPalette()
 end
 
 function _init()
-    state = STATES.TEAM_SELECT
-    initTeamSelect()
+    state = STATES.MAIN_MENU
+    initMainMenu()
 end
 
 UPDATES = {
     GAME = updateGame,
-    TEAM_SELECT = updateTeamSelect,
+    MAIN_MENU = updateMainMenu,
 }
 function _update60()
     UPDATES[state]()
@@ -1414,7 +1452,7 @@ end
 
 DRAWS = {
     GAME = drawGame,
-    TEAM_SELECT = drawTeamSelect,
+    MAIN_MENU = drawMainMenu,
 }
 function _draw()
     DRAWS[state]()
