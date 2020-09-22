@@ -240,7 +240,7 @@ function Ball:move(x, y)
             if collision.other:is(GoalWall) then
                 elasticity = -0.25
             else
-                sfx(5)
+                sfx(62)
             end
             if collision.normal.x ~= 0 then
                 self.velX = self.velX * elasticity
@@ -275,7 +275,7 @@ function Ball:pass(velX, velY)
     self.velY = scale * Ball.PASS_SPEED * velY
     isFreeKick = false
     isKickOff = false
-    sfx(3)
+    sfx(60)
 end
 
 function Ball:shoot(velX, velY)
@@ -287,7 +287,7 @@ function Ball:shoot(velX, velY)
     self.velY = scale * Ball.SHOOT_SPEED * velY
     isFreeKick = false
     isKickOff = false
-    sfx(4)
+    sfx(61)
 end
 
 function Ball:draw()
@@ -1151,10 +1151,14 @@ function updateGame()
                 add(updatedTeams, i)
             end
         end
-        if goalTimer == 0 and not isFreeKick and not isKickOff then
+        if not isFullTime() and goalTimer == 0 and not isFreeKick and not isKickOff then
             gameTimer = gameTimer + 1
             if gameTimer == HALF_LENGTH * 60 then
                 halfTimeTimer = HALF_TIME_TIMER_MAX
+            end
+            -- Big cheer if someone won
+            if isFullTime() and teams[1].goals ~= teams[2].goals then
+                music(2)
             end
         end
     end
@@ -1201,7 +1205,7 @@ function updateGame()
         ball:update()
     end
 
-    if isFullTime() and btpn(4) then
+    if isFullTime() and btnp(4) then
         state = STATES.MAIN_MENU
         initMainMenu()
     end
@@ -1265,19 +1269,22 @@ function drawGame()
     end
 
     if halfTimeTimer > 0 or isFullTime() then
-        fillp('0b0101101001011010.1')
-        rectfill(0, 0, 127, 127, 0)
-        fillp()
-        rectfill(40, 57, 87, 67, 0)
         if isFullTime() then
-            print('full time', 46, 60, 7)
+            printShadowCentre('full time', 56)
+            printShadowCentre('\x8e return to menu', 96)
         else
-            print('half time', 46, 60, 7)
+            printShadowCentre('half time', 56)
         end
-        -- TODO show score under banner instead of
-        -- in normal corner display
+        spr(teams[1].teamData.flags[1], 31, 70)
+        spr(teams[2].teamData.flags[1], 88, 70)
+        rectfill(50, 69, 76, 79, 0)
+        printShadowCentre(
+            tostr(teams[1].goals)..' - '..tostr(teams[2].goals),
+            72
+        )
+    else
+        drawScoreDisplay()
     end
-    drawScoreDisplay()
 end
 
 SELECT_WIDTH = 4
@@ -1295,11 +1302,12 @@ MATCH_MODES = {
     { nil, nil, 'CPU vs CPU' },
 }
 MENU_STATES = {
-    MODE = 'MODE',
+    FRIENDLY_MODE = 'FRIENDLY_MODE',
     TEAMS = 'TEAMS',
 }
 function initMainMenu()
-    menuState = MENU_STATES.MODE
+    music(-1)
+    menuState = MENU_STATES.FRIENDLY_MODE
     modeCursorPosition = 0
     p1Cursor = {
         x = 0,
@@ -1318,7 +1326,7 @@ end
 function updateCursor(cursor)
     if btnp(4) then
         cursor.selected = true
-        sfx(6)
+        sfx(63)
     elseif btnp(0) then
         cursor.x = cursor.x - 1
     elseif btnp(1) then
@@ -1334,7 +1342,7 @@ function updateCursor(cursor)
 end
 
 function updateMainMenu()
-    if menuState == MENU_STATES.MODE then
+    if menuState == MENU_STATES.FRIENDLY_MODE then
         if btnp(2) then
             modeCursorPosition = modeCursorPosition - 1
         elseif btnp(3) then
@@ -1345,7 +1353,7 @@ function updateMainMenu()
         if btnp(4) then
             selectedMatchMode = MATCH_MODES[modeCursorPosition + 1]
             menuState = MENU_STATES.TEAMS
-            sfx(6)
+            sfx(63)
         end
     else
         if p2Cursor.selected then
@@ -1356,7 +1364,7 @@ function updateMainMenu()
                     p2Team,
                     selectedMatchMode
                 )
-                sfx(6)
+                sfx(63)
             elseif btnp(5) then
                 p2Cursor.selected = false
             end
@@ -1371,7 +1379,7 @@ function updateMainMenu()
             end
         else
             if btnp(5) then
-                menuState = MENU_STATES.MODE
+                menuState = MENU_STATES.FRIENDLY_MODE
             else
                 updateCursor(p1Cursor)
                 if btnp(4) then
@@ -1430,7 +1438,7 @@ function drawMainMenu()
         if p1Cursor.selected and p2Cursor.selected then
             printShadowCentre('ready?', 96)
         end
-    elseif menuState == MENU_STATES.MODE then
+    elseif menuState == MENU_STATES.FRIENDLY_MODE then
         spr(182, 40, 16, 6, 5)
         for i, matchMode in ipairs(MATCH_MODES) do
             local color = 5
