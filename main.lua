@@ -418,14 +418,14 @@ function Player:findClosestPlayer(sameTeam, weightFunction)
         teamToCheck = self.team
     end
 
-    local closestPlayer, distance = 0, 9999
+    local closestPlayer, distance = nil, 9999
     for player in all(teamToCheck.players) do
         -- local angleToPlayer = atan2(self.x - player.x, self.y - player.y)
         local playerDistance = getDistance(self.x, self.y, player.x, player.y)
         -- A weighting function can be used to apply some kind of bias e.g.
         -- prefer players further up the field or within a better angle.
         if weightFunction then
-            weightFunction(playerDistance, player)
+            playerDistance = weightFunction(playerDistance, player)
         end
         if self ~= player and playerDistance < distance then
             closestPlayer = player
@@ -467,13 +467,17 @@ function Player:updatePassive()
             if ball.controllingPlayer == self then
                 -- lump it clear
                 ball:shoot(-cos(angleToGoal + rnd(0.3) - 0.15), -sin(angleToGoal + rnd(0.3) - 0.15))
+            elseif getDistance(centreX, centreY, ball.x, ball.y) < 24 then
+                -- Come for ball if it's close.
+                velX = ball.x - centreX
+                velY = ball.y - centreY
             else
+                -- Move along goalline to follow ball. Return to goalline if not on it.
                 velX = ball.x - (self.x + 2)
+                velY = self.defendingHomeY - self.y
             end
         else
             if ball.controllingPlayer == self then
-                -- Check for shooting opportunity
-                -- Less concerned about rapid passes here, so ballReceivedTimer is ignored
                 local closestSameTeamPlayer, distance = self:findClosestPlayer(
                     true,
                     -- Prefer players closer to goal
@@ -644,7 +648,26 @@ function Player:updateActive()
         end
 
         if btnp(4, self.joypadId) then
-            ball:pass(velX, velY)
+            -- Pass to the best available player in the direction the player
+            -- is aiming in.
+            local angle = atan2(-velX, -velY)
+            local passTarget, distance = self:findClosestPlayer(
+                true,
+                -- Prefer players close but also at a similar angle.
+                (function (distance, player)
+                    local angleToPlayer = atan2(self.x - player.x, self.y - player.y)
+                    local angleDiff = abs((angle - angleToPlayer + 0.5) % 1 - 0.5)
+                    -- For angles too big or distances too long, penalise the distance
+                    -- enough to remove them from contention, but preserve the order in
+                    -- case no better options are actually available.
+                    if angleDiff > 0.2 or distance > 160 then
+                        return angleDiff + 9876
+                    end
+                    return distance * sqrt(angleDiff)
+                end)
+            )
+            local passAngle = atan2(passTarget.x - self.x, passTarget.y - self.y)
+            ball:pass(cos(passAngle), sin(passAngle))
         elseif btnp(5, self.joypadId) then
             ball:shoot(-cos(angleToGoal + rnd(0.1) - 0.05), -sin(angleToGoal + rnd(0.1) - 0.05))
         end
@@ -652,6 +675,7 @@ function Player:updateActive()
 end
 
 
+Player.MAX_SPEED = 0.8
 function Player:move(velX, velY)
     if
         isFreeKick or (isKickOff and goalTimer == 0) or
@@ -662,21 +686,15 @@ function Player:move(velX, velY)
     end
 
     local magnitude = 8 * sqrt(velX/8 * velX/8 + velY/8 * velY/8)
-    if magnitude > 1 then
-        velX = velX / magnitude
-        velY = velY / magnitude
+    if magnitude > Player.MAX_SPEED then
+        velX = Player.MAX_SPEED * velX / magnitude
+        velY = Player.MAX_SPEED * velY / magnitude
     end
 
     -- Players are marginally slower with the ball.
     if ball.controllingPlayer == self then
         velX = velX * 0.9
         velY = velY * 0.9
-    end
-
-    -- Goalkeepers move slightly slower so they're less superhuman
-    if isGoalkeeper then
-        velX = velX * 0.8
-        velY = velY * 0.8
     end
 
     -- Move slowly after losing the ball
@@ -785,8 +803,8 @@ Team = Object:extend()
 Team.GRID_POSITIONS = {
         -- Defence
     "1, 2", -- RB
-    "2, 2", -- CB
-    "3, 2", -- CB
+    "2, 1", -- CB
+    "3, 1", -- CB
     "4, 2", -- LB
     -- Midfield
     "1, 4", -- RW
@@ -997,7 +1015,7 @@ function drawField()
         setPalette(teams[2].palette)
         map(0, 8, -96, 416, 48, 8)
         map(56, 0, -96, 192, 8, 28)
-        map(56, 0, 224, 192, 28)
+        map(56, 0, 224, 192, 8, 28)
         resetPalette()
     end
 end
