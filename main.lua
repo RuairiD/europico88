@@ -201,7 +201,7 @@ function Ball:move(x, y)
                 isFreeKick = false
                 isKickOff = true
                 setKickOffTeam(collision.other.attackingTeam)
-                music(2)
+                music(0)
             else
                 ballOutTimer = BALL_OUT_TIMER_MAX
                 isFreeKick = true
@@ -356,21 +356,19 @@ function Player:resetPosition(isKickOff, targetX, targetY)
         else
             self.defendingHomeY = 0
         end
-        self.attackingHomeX = self.defendingHomeX
         self.attackingHomeY = self.defendingHomeY
     else
         if self.team.playingUp then
             self.defendingHomeX = (5 - self.gridX) * 48 - 24
             self.defendingHomeY = (9 - self.gridY) * 48 - 24
-            self.attackingHomeX = self.defendingHomeX
             self.attackingHomeY = self.defendingHomeY - 12 * 8
         else
             self.defendingHomeX = self.gridX * 48 - 24
             self.defendingHomeY = self.gridY * 48 - 24
-            self.attackingHomeX = self.defendingHomeX
             self.attackingHomeY = self.defendingHomeY + 12 * 8
         end
     end
+    self.attackingHomeX = self.defendingHomeX
     self:updateIsDefending()
     local x, y
     if self.isDefending then
@@ -419,7 +417,6 @@ function Player:findClosestPlayer(sameTeam, weightFunction)
         maxAngle = 1
     end
 
-    local teamToCheck = nil
     if not sameTeam then
         for team in all(teams) do
             if team ~= self.team then
@@ -597,23 +594,19 @@ function Player:updatePassive()
         end
     end
 
+    self.direction = DIRECTIONS.S
     if self.isGoalkeeper then
         if self.team.playingUp then
             self.direction = DIRECTIONS.N
-        else
-            self.direction = DIRECTIONS.S
         end
     elseif abs(velX) > abs(velY) then
+        self.direction = DIRECTIONS.E
         if velX < 0 then
             self.direction = DIRECTIONS.W
-        else
-            self.direction = DIRECTIONS.E
         end
     else
         if velY < 0 then
             self.direction = DIRECTIONS.N
-        else
-            self.direction = DIRECTIONS.S
         end
     end
 
@@ -883,7 +876,8 @@ function Team:setSelectedPlayer(newSelectedPlayer)
     for i, player in ipairs(self.players) do
         if player == newSelectedPlayer then
             self.selectedPlayerIndex = i
-            break
+            -- break
+            -- commented out for tokens
         end
     end
 end
@@ -943,8 +937,6 @@ function Team:draw()
     end
     resetPalette()
 end
-
--- START MAIN
 
 FIELD_COLORS = { 3, 11 }
 FIELD_STRIPE_HEIGHT = 2
@@ -1043,7 +1035,7 @@ end
 
 GOAL_TIMER_MAX = 300
 BALL_OUT_TIMER_MAX = 180
-HALF_LENGTH = 1
+HALF_LENGTH = 120
 GAME_TIME_SCALE = 2700 -- 45 * 60
 HALF_TIME_TIMER_MAX = 300
 
@@ -1127,6 +1119,7 @@ function initGame(team1, team2, joypadIds)
     kickOffTeam = teams[1]
 
     resetKickOff()
+    music(1)
 end
 
 function setKickOffTeam(nonKickOffTeam)
@@ -1146,7 +1139,6 @@ function resetKickOff()
     ball:setPosition(96, 192)
     isKickOff = true
     resetPositions(true)
-    music(0)
 end
 
 function resetPositions(isKickOff)
@@ -1197,6 +1189,7 @@ function updateGame()
             if gameTimer == HALF_LENGTH * 60 then
                 halfTimeTimer = HALF_TIME_TIMER_MAX
             end
+
             -- Big cheer if someone won
             if isFullTime() and teams[1].goals ~= teams[2].goals then
                 music(2)
@@ -1296,7 +1289,7 @@ function drawGame()
     spr(7, goalX * 8, -24, 4, 3)
     ball:draw()
     for team in all(teams) do team:draw() end
-    spr(11, goalX * 8, 48 * 8 - 12, 4, 3)
+    spr(11, goalX * 8, 372, 4, 3)
     camera()
 
     if goalTimer > 0 then
@@ -1319,9 +1312,7 @@ function drawGame()
         else
             printShadowCentre('half time', 56)
         end
-        fillp('0b1010010110100101.1')
         rectfill(0, 69, 127, 79, 0)
-        fillp()
         spr(teams[1].teamData.flags[1], 31, 70)
         spr(teams[2].teamData.flags[1], 88, 70)
         printShadowCentre(
@@ -1336,8 +1327,8 @@ end
 SELECT_WIDTH = 4
 SELECT_HEIGHT = 2
 TEAM_GRID = {
-    { 'FRG', 'ITA', 'DEN', 'ESP' },
-    { 'ENG', 'IRL', 'NED', 'URS' },
+    split('FRG,ITA,DEN,ESP'),
+    split('ENG,IRL,NED,URS'),
 }
 MATCH_MODES = {
     -- P1 vs P2
@@ -1509,7 +1500,7 @@ function drawMainMenu()
     elseif menuState == MENU_STATES.FRIENDLY_MODE then
         spr(182, 40, 12, 6, 5)
         for flagIndex=0,7 do
-            spr(80 + flagIndex, 25 + flagIndex * 10, 52)
+            spr(80 + flagIndex, 25 + flagIndex * 10, 54)
         end
         for i, matchMode in ipairs(MATCH_MODES) do
             local color = 5
@@ -1572,4 +1563,3 @@ function _draw()
 
     drawTransition()
 end
--- END MAIN
