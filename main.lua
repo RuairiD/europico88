@@ -1144,6 +1144,9 @@ function initGame(team1, team2, joypadIds)
 
     resetKickOff()
     music(1)
+
+    cameraTargetX, cameraTargetY = ball.x - 63, ball.y - 63
+    cameraX, cameraY = cameraTargetX, cameraTargetY
 end
 
 function setKickOffTeam(nonKickOffTeam)
@@ -1276,6 +1279,15 @@ function updateGame()
             end)
         end
     end
+
+    cameraTargetX, cameraTargetY = ball.x - 63, ball.y - 63
+    if goalTimer > 0 and ball.lastControllingPlayer then
+        cameraTargetX, cameraTargetY = ball.lastControllingPlayer.x - 61, ball.lastControllingPlayer.y - 61
+    elseif ball.controllingPlayer then
+        cameraTargetX, cameraTargetY = ball.controllingPlayer.x - 61, ball.controllingPlayer.y - 61
+    end
+    cameraX = cameraX + (cameraTargetX - cameraX)/8
+    cameraY = cameraY + (cameraTargetY - cameraY)/8
 end
 
 function drawScoreDisplay()
@@ -1300,18 +1312,6 @@ end
 
 function drawGame()
     cls()
-    cameraTargetX, cameraTargetY = ball.x - 63, ball.y - 63
-    if goalTimer > 0 and ball.lastControllingPlayer then
-        cameraTargetX, cameraTargetY = ball.lastControllingPlayer.x - 61, ball.lastControllingPlayer.y - 61
-    elseif ball.controllingPlayer then
-        cameraTargetX, cameraTargetY = ball.controllingPlayer.x - 61, ball.controllingPlayer.y - 61
-    end
-    if not cameraX or not cameraY then
-        cameraX, cameraY = cameraTargetX, cameraTargetY
-    else
-        cameraX = cameraX + (cameraTargetX - cameraX)/8
-        cameraY = cameraY + (cameraTargetY - cameraY)/8
-    end
     camera(cameraX, cameraY)
     drawField()
 
