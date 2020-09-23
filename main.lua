@@ -61,7 +61,11 @@ function printShadow(text, x, y, color)
     if not color then
         color = 7
     end
-    print(text, x, y + 1, 0)
+    for dx=-1,1 do
+        for dy=-1,1 do
+            print(text, x + dx, y + dy, 0)
+        end
+    end
     print(text, x, y, color)
 end
 
@@ -163,7 +167,6 @@ function Ball:update()
     if self.controllingPlayer then
         self.velX = 0
         self.velY = 0
-        self.lastControllingPlayer = self.controllingPlayer
     end
 
     self.velX = self.velX * Ball.FRICTION
@@ -175,6 +178,13 @@ function Ball:update()
 
     if self.shootTimer > 0 then
         self.shootTimer = self.shootTimer - 1
+    end
+end
+
+function Ball:setControllingPlayer(controllingPlayer)
+    self.controllingPlayer = controllingPlayer
+    if controllingPlayer then
+        self.lastControllingPlayer = controllingPlayer
     end
 end
 
@@ -264,12 +274,12 @@ function Ball:setPosition(x, y)
     self.x = x
     self.y = y
     bumpWorld:update(self, self.x, self.y, 2, 2)
-    self.controllingPlayer = nil
+    self:setControllingPlayer(nil)
 end
 
 function Ball:pass(velX, velY)
     self.controllingPlayer.ballLostTimer = Player.BALL_LOST_BY_KICKING_TIMER_MAX 
-    self.controllingPlayer = nil
+    self:setControllingPlayer(nil)
     local scale = (0.9 + rnd(0.2))
     self.velX = scale * Ball.PASS_SPEED * velX
     self.velY = scale * Ball.PASS_SPEED * velY
@@ -281,7 +291,7 @@ end
 function Ball:shoot(velX, velY)
     self.controllingPlayer.ballLostTimer = Player.BALL_LOST_BY_KICKING_TIMER_MAX 
     self.shootTimer = Ball.SHOOT_TIMER_MAX
-    self.controllingPlayer = nil
+    self:setControllingPlayer(nil)
     local scale = (0.8 + rnd(0.4))
     self.velX = scale * Ball.SHOOT_SPEED * velX 
     self.velY = scale * Ball.SHOOT_SPEED * velY
@@ -375,9 +385,9 @@ function Player:resetPosition(isKickOff, targetX, targetY)
     local halfway = 192
     if isKickOff then
         if self.team.playingUp and y < halfway then
-            y = halfway + 16
+            y = halfway + 32
         elseif not self.team.playingUp and y > halfway then
-            y = halfway - 16
+            y = halfway - 32
         end
     end
     self:setPosition(x, y)
@@ -467,7 +477,7 @@ function Player:updatePassive()
             if ball.controllingPlayer == self then
                 -- lump it clear
                 ball:shoot(-cos(angleToGoal + rnd(0.3) - 0.15), -sin(angleToGoal + rnd(0.3) - 0.15))
-            elseif getDistance(centreX, centreY, ball.x, ball.y) < 24 then
+            elseif getDistance(centreX, centreY, ball.x, ball.y) < 24 and (not ball.controllingPlayer or ball.controllingPlayer.team ~= self.team) then
                 -- Come for ball if it's close.
                 velX = ball.x - centreX
                 velY = ball.y - centreY
@@ -519,7 +529,7 @@ function Player:updatePassive()
                         -- goal), shoot (if close to goal) or attempt to pass it to a teammate.
                         if distanceToGoal > 256 or distanceToGoal < 64 then
                             -- Wild shot/clearance
-                            ball:shoot(-cos(angleToGoal + rnd(0.3) - 0.15), -sin(angleToGoal + rnd(0.3) - 0.15))
+                            ball:shoot(-cos(angleToGoal + rnd(0.2) - 0.1), -sin(angleToGoal + rnd(0.2) - 0.1))
                         elseif self.ballReceivedTimer == 0 then
                             ball:pass(-cos(passAngle), -sin(passAngle))
                         end
@@ -705,10 +715,11 @@ function Player:move(velX, velY)
 
     local targetX, targetY = self.x + velX, self.y + velY
     if self.isGoalkeeper then
-        if targetX < 8 * (24 - GOAL_WIDTH)/2 then
-            targetX = 8 * (24 - GOAL_WIDTH)/2
-        elseif targetX > 8 * (12 + GOAL_WIDTH/2) - self.width then
-            targetX = 8 * (12 + GOAL_WIDTH/2) - self.width 
+        -- GOAL_WIDTH hardcoded here
+        if targetX < 8 * 10 then
+            targetX = 8 * 10
+        elseif targetX > 8 * 14 - self.width then
+            targetX = 8 * 14 - self.width 
         end
     end
 
@@ -768,7 +779,7 @@ function Player:takeBall(ball)
     if ball.controllingPlayer and ball.controllingPlayer ~= self then
         ball.controllingPlayer.ballLostTimer = Player.BALL_LOST_TIMER_MAX 
     end
-    ball.controllingPlayer = self
+    ball:setControllingPlayer(self)
     self.ballReceivedTimer = Player.BALL_RECEIVED_TIMER_MAX 
 end
 
@@ -808,8 +819,8 @@ Team.GRID_POSITIONS = {
     "4, 2", -- LB
     -- Midfield
     "1, 4", -- RW
-    "2.5, 3", -- CDM
-    "3.5, 4", -- CAM
+    "2, 3", -- CM
+    "3, 3", -- CM
     "4, 4", -- LW
     -- Forwards
     "2, 5", -- SC
@@ -855,9 +866,8 @@ function Team:findPlayerClosestToBall(excludePlayerId)
     for i, player in ipairs(self.players) do
         if i ~= excludePlayerId and not player.isGoalkeeper then
             local candidateDistance = getDistance(
-                abs(player.x - ball.x) * (1 - ball.velX),
-                abs(player.y - ball.y) * (1 - ball.velY),
-                0, 0
+                player.x, player.y,
+                ball.x + ball.velX, ball.y + ball.velY
             )
             if candidateDistance < timeToBall then
                 closestPlayerIndex, timeToBall = i, candidateDistance
@@ -865,6 +875,15 @@ function Team:findPlayerClosestToBall(excludePlayerId)
         end
     end
     return closestPlayerIndex
+end
+
+function Team:setSelectedPlayer(newSelectedPlayer)
+    for i, player in ipairs(self.players) do
+        if player == newSelectedPlayer then
+            self.selectedPlayerIndex = i
+            break
+        end
+    end
 end
 
 function Team:update()
@@ -901,7 +920,7 @@ function Team:update()
     end
 
     -- Set one player as the ball chaser if they're closest to the ball.
-    self.players[self:findPlayerClosestToBall()].isChasingBall = true
+    self.players[self:findPlayerClosestToBall(self.selectedPlayerIndex)].isChasingBall = true
 end
 
 Team.CURSOR_COLORS = { 8, 12 }
@@ -1022,7 +1041,7 @@ end
 
 GOAL_TIMER_MAX = 300
 BALL_OUT_TIMER_MAX = 180
-HALF_LENGTH = 120
+HALF_LENGTH = 1
 GAME_TIME_SCALE = 2700 -- 45 * 60
 HALF_TIME_TIMER_MAX = 300
 
@@ -1039,21 +1058,22 @@ function initGame(team1, team2, joypadIds)
         Team(team1, joypadIds[1], false, false),
         Team(team2, joypadIds[2], true, isAway),
     }
+    -- GOAL_WIDTH = 4 has been hardcoded into some of these calculations
     fieldLines = {
         -- Top left touchline
         FieldLine(
             -FIELD_LINE_OFFSET,
             -FIELD_LINE_OFFSET,
-            (24 - GOAL_WIDTH)/2 * 8 + FIELD_LINE_OFFSET,
+            80 + FIELD_LINE_OFFSET,
             1,
             false,
             teams[2]
         ),
         -- Top right touchline
         FieldLine(
-            8 * (24/2 + GOAL_WIDTH/2),
+            112,
             -FIELD_LINE_OFFSET,
-            (24 - GOAL_WIDTH)/2 * 8 + FIELD_LINE_OFFSET,
+            80 + FIELD_LINE_OFFSET,
             1,
             false,
             teams[2]
@@ -1061,34 +1081,34 @@ function initGame(team1, team2, joypadIds)
         -- Bottom left touchline
         FieldLine(
             -FIELD_LINE_OFFSET,
-            48 * 8 + FIELD_LINE_OFFSET,
-            (24 - GOAL_WIDTH)/2 * 8 + FIELD_LINE_OFFSET,
+            384 + FIELD_LINE_OFFSET,
+            80 + FIELD_LINE_OFFSET,
             1,
             false,
             teams[1]
         ),
         -- Bottom right touchline
         FieldLine(
-            8 * (24/2 + GOAL_WIDTH/2),
-            48 * 8 + FIELD_LINE_OFFSET,
-            (24 - GOAL_WIDTH)/2 * 8 + FIELD_LINE_OFFSET,
+            112,
+            384 + FIELD_LINE_OFFSET,
+            80 + FIELD_LINE_OFFSET,
             1,
             false,
             teams[1]
         ),
         -- Left long line
-        FieldLine(-FIELD_LINE_OFFSET, -FIELD_LINE_OFFSET, 1, 48 * 8 + FIELD_LINE_OFFSET * 2),
+        FieldLine(-FIELD_LINE_OFFSET, -FIELD_LINE_OFFSET, 1, 384 + FIELD_LINE_OFFSET * 2),
         -- Right long line
-        FieldLine(24 * 8 + 2, -FIELD_LINE_OFFSET, 1, 48 * 8 + FIELD_LINE_OFFSET * 2),
+        FieldLine(24 * 8 + 2, -FIELD_LINE_OFFSET, 1, 384 + FIELD_LINE_OFFSET * 2),
         -- Goal lines are slightly behind the field lines
-        FieldLine(8 * (24 - GOAL_WIDTH)/2 + 2, -FIELD_LINE_OFFSET, GOAL_WIDTH * 8 - 4, 1, true, teams[2]),
-        FieldLine(8 * (24 - GOAL_WIDTH)/2 + 2, 48 * 8 + FIELD_LINE_OFFSET, GOAL_WIDTH * 8 - 4, 1, true, teams[1]),
+        FieldLine(8 * (24 - GOAL_WIDTH)/2 + 1, -FIELD_LINE_OFFSET, GOAL_WIDTH * 8 - 2, 1, true, teams[2]),
+        FieldLine(8 * (24 - GOAL_WIDTH)/2 + 1, 48 * 8 + FIELD_LINE_OFFSET, GOAL_WIDTH * 8 - 2, 1, true, teams[1]),
     }
     perimeterWalls = {
-        Wall(-40, -40, 256, 8),
-        Wall(-40, -40, 8, 448),
-        Wall((24 + 4) * 8, -40, 8, 512),
-        Wall(-40, 416, 256, 8),
+        Wall(-40, -40, 320, 8),
+        Wall(-40, -40, 8, 512),
+        Wall(224, -40, 8, 512),
+        Wall(-40, 416, 320, 8),
         GoalWall(8 * (24 - GOAL_WIDTH)/2, -20, GOAL_WIDTH * 8, 1),
         GoalWall(8 * (24 - GOAL_WIDTH)/2, 48 * 8 + 8, GOAL_WIDTH * 8, 1),
         --Side walls
@@ -1147,8 +1167,9 @@ function resetPositions(isKickOff)
             distance = candidateDistance
         end
     end
-    ball.controllingPlayer = nearestPlayer
+    ball:setControllingPlayer(nearestPlayer)
     nearestPlayer:setPosition(ball.x, ball.y)
+    nearestPlayer.team:setSelectedPlayer(nearestPlayer)
 end
 
 function updateGame()
@@ -1224,8 +1245,11 @@ function updateGame()
     end
 
     if isFullTime() and btnp(4) then
-        state = STATES.MAIN_MENU
-        initMainMenu()
+        transitionTimer = TRANSITION_TIMER_MAX
+        transitionCallback = (function()
+            state = STATES.MAIN_MENU
+            initMainMenu()
+        end)
     end
 end
 
@@ -1293,9 +1317,11 @@ function drawGame()
         else
             printShadowCentre('half time', 56)
         end
+        fillp('0b1010010110100101.1')
+        rectfill(0, 69, 127, 79, 0)
+        fillp()
         spr(teams[1].teamData.flags[1], 31, 70)
         spr(teams[2].teamData.flags[1], 88, 70)
-        rectfill(50, 69, 76, 79, 0)
         printShadowCentre(
             tostr(teams[1].goals)..' - '..tostr(teams[2].goals),
             72
@@ -1347,12 +1373,16 @@ function updateCursor(cursor)
         sfx(63)
     elseif btnp(0) then
         cursor.x = cursor.x - 1
+        sfx(60)
     elseif btnp(1) then
         cursor.x = cursor.x + 1
+        sfx(60)
     elseif btnp(2) then
         cursor.y = cursor.y - 1
+        sfx(60)
     elseif btnp(3) then
         cursor.y = cursor.y + 1
+        sfx(60)
     end
 
     cursor.x = cursor.x % 4
@@ -1363,8 +1393,10 @@ function updateMainMenu()
     if menuState == MENU_STATES.FRIENDLY_MODE then
         if btnp(2) then
             modeCursorPosition = modeCursorPosition - 1
+            sfx(60)
         elseif btnp(3) then
             modeCursorPosition = modeCursorPosition + 1
+            sfx(60)
         end
         modeCursorPosition = modeCursorPosition % 3
 
@@ -1376,19 +1408,24 @@ function updateMainMenu()
     else
         if p2Cursor.selected then
             if btnp(4) then
-                state = STATES.GAME
-                initGame(
-                    p1Team,
-                    p2Team,
-                    selectedMatchMode
-                )
+                transitionTimer = TRANSITION_TIMER_MAX
+                transitionCallback = (function ()
+                    state = STATES.GAME
+                    initGame(
+                        p1Team,
+                        p2Team,
+                        selectedMatchMode
+                    )
+                end)
                 sfx(63)
             elseif btnp(5) then
                 p2Cursor.selected = false
+                sfx(61)
             end
         elseif p1Cursor.selected then
             if btnp(5) then
                 p1Cursor.selected = false
+                sfx(61)
             else
                 updateCursor(p2Cursor)
                 if btnp(4) then
@@ -1398,6 +1435,7 @@ function updateMainMenu()
         else
             if btnp(5) then
                 menuState = MENU_STATES.FRIENDLY_MODE
+                sfx(61)
             else
                 updateCursor(p1Cursor)
                 if btnp(4) then
@@ -1470,7 +1508,28 @@ function drawMainMenu()
     resetPalette()
 end
 
+TRANSITION_TIMER_MAX = 60
+function updateTransition()
+    if transitionTimer > 0 then
+        transitionTimer = transitionTimer - 1
+        if transitionTimer == TRANSITION_TIMER_MAX/2 and transitionCallback then
+            transitionCallback()
+        end
+    end
+end
+
+
+function drawTransition()
+    local progress = transitionTimer/TRANSITION_TIMER_MAX
+    local x = -144 + 256 * progress
+    fillp('0b0101101001011010.1')
+    rectfill(x, 0, x + 143, 127, 0)
+    fillp()
+    rectfill(x + 8, 0, x + 135, 127, 0)
+end
+
 function _init()
+    transitionTimer = TRANSITION_TIMER_MAX/2
     state = STATES.MAIN_MENU
     initMainMenu()
 end
@@ -1480,7 +1539,11 @@ UPDATES = {
     MAIN_MENU = updateMainMenu,
 }
 function _update60()
-    UPDATES[state]()
+    if transitionTimer == 0 then
+        UPDATES[state]()
+    end
+
+    updateTransition()
 end
 
 DRAWS = {
@@ -1489,5 +1552,7 @@ DRAWS = {
 }
 function _draw()
     DRAWS[state]()
+
+    drawTransition()
 end
 -- END MAIN
