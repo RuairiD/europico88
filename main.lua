@@ -1,3 +1,5 @@
+VERSION = "v0.1.0"
+
 STATES = {
     MAIN_MENU = 'MAIN_MENU',
     GAME = 'GAME',
@@ -464,7 +466,7 @@ function Player:updatePassive()
     local goalY = 0
     local goalX = 96
     if not self.team.playingUp then
-        goalY = 48 * 8
+        goalY = 384
     end
     local distanceToGoal = getDistance(centreX, centreY + 2, goalX, goalY)
     local angleToGoal = atan2(
@@ -716,10 +718,10 @@ function Player:move(velX, velY)
     local targetX, targetY = self.x + velX, self.y + velY
     if self.isGoalkeeper then
         -- GOAL_WIDTH hardcoded here
-        if targetX < 8 * 10 then
-            targetX = 8 * 10
-        elseif targetX > 8 * 14 - self.width then
-            targetX = 8 * 14 - self.width 
+        if targetX < 80 then
+            targetX = 80
+        elseif targetX > 112 - self.width then
+            targetX = 112 - self.width 
         end
     end
 
@@ -1058,7 +1060,7 @@ function initGame(team1, team2, joypadIds)
         Team(team1, joypadIds[1], false, false),
         Team(team2, joypadIds[2], true, isAway),
     }
-    -- GOAL_WIDTH = 4 has been hardcoded into some of these calculations
+    -- GOAL_WIDTH = 4 has been hardcoded into most of these calculations
     fieldLines = {
         -- Top left touchline
         FieldLine(
@@ -1099,23 +1101,23 @@ function initGame(team1, team2, joypadIds)
         -- Left long line
         FieldLine(-FIELD_LINE_OFFSET, -FIELD_LINE_OFFSET, 1, 384 + FIELD_LINE_OFFSET * 2),
         -- Right long line
-        FieldLine(24 * 8 + 2, -FIELD_LINE_OFFSET, 1, 384 + FIELD_LINE_OFFSET * 2),
+        FieldLine(192 + 2, -FIELD_LINE_OFFSET, 1, 384 + FIELD_LINE_OFFSET * 2),
         -- Goal lines are slightly behind the field lines
-        FieldLine(8 * (24 - GOAL_WIDTH)/2 + 1, -FIELD_LINE_OFFSET, GOAL_WIDTH * 8 - 2, 1, true, teams[2]),
-        FieldLine(8 * (24 - GOAL_WIDTH)/2 + 1, 48 * 8 + FIELD_LINE_OFFSET, GOAL_WIDTH * 8 - 2, 1, true, teams[1]),
+        FieldLine(8 * (24 - 4)/2 + 1, -FIELD_LINE_OFFSET, 4 * 8 - 2, 1, true, teams[2]),
+        FieldLine(8 * (24 - 4)/2 + 1, 48 * 8 + FIELD_LINE_OFFSET, 4 * 8 - 2, 1, true, teams[1]),
     }
     perimeterWalls = {
         Wall(-40, -40, 320, 8),
         Wall(-40, -40, 8, 512),
         Wall(224, -40, 8, 512),
         Wall(-40, 416, 320, 8),
-        GoalWall(8 * (24 - GOAL_WIDTH)/2, -20, GOAL_WIDTH * 8, 1),
-        GoalWall(8 * (24 - GOAL_WIDTH)/2, 48 * 8 + 8, GOAL_WIDTH * 8, 1),
+        GoalWall(80, -20, 32, 1),
+        GoalWall(80, 392, 32, 1),
         --Side walls
-        GoalWall(8 * (24 - GOAL_WIDTH)/2, -20, 1, 20),
-        GoalWall(8 * (24 - GOAL_WIDTH)/2, 48 * 8, 1, 8),
-        GoalWall(8 * (GOAL_WIDTH + (24 - GOAL_WIDTH)/2), -20, 1, 20),
-        GoalWall(8 * (GOAL_WIDTH + (24 - GOAL_WIDTH)/2), 48 * 8, 1, 8),
+        GoalWall(80, -20, 1, 20),
+        GoalWall(80, 384, 1, 8),
+        GoalWall(112, -20, 1, 20),
+        GoalWall(112, 384, 1, 8),
     }
     goalTimer = 0
     ballOutTimer = 0
@@ -1446,6 +1448,14 @@ function updateMainMenu()
     end
 end
 
+function drawCursorRect(x, y)
+    local color = 0
+    if flr(time() * 8) % 2 == 0 then
+        color = 7
+    end
+    rect(x, y, x + 25, y + 17, color)
+end
+
 function drawMainMenu()
     cls()
     camera(32, 128)
@@ -1463,20 +1473,22 @@ function drawMainMenu()
         end
 
         palt(0, false)
-        if p1Cursor.selected then
-            local cursorX, cursorY = 11 + p2Cursor.x * 27, 32 + p2Cursor.y * 19
-            if selectedMatchMode[3] == 'P1 vs P2' then
-                spr(195, cursorX, cursorY, 3, 2)
-            else
-                spr(224, cursorX, cursorY, 3, 2)
-            end
-        else
+        if not p1Cursor.selected then
             local cursorX, cursorY = 11 + p1Cursor.x * 27, 32 + p1Cursor.y * 19
             if selectedMatchMode[3] == 'CPU vs CPU' then
                 spr(224, cursorX, cursorY, 3, 2)
             else
                 spr(192, cursorX, cursorY, 3, 2)
             end
+            drawCursorRect(cursorX - 1, cursorY - 1)
+        elseif not p2Cursor.selected then
+            local cursorX, cursorY = 11 + p2Cursor.x * 27, 32 + p2Cursor.y * 19
+            if selectedMatchMode[3] == 'P1 vs P2' then
+                spr(195, cursorX, cursorY, 3, 2)
+            else
+                spr(224, cursorX, cursorY, 3, 2)
+            end
+            drawCursorRect(cursorX - 1, cursorY - 1)
         end
 
         if p1Cursor.selected then
@@ -1495,16 +1507,21 @@ function drawMainMenu()
             printShadowCentre('ready?', 96)
         end
     elseif menuState == MENU_STATES.FRIENDLY_MODE then
-        spr(182, 40, 16, 6, 5)
+        spr(182, 40, 12, 6, 5)
+        for flagIndex=0,7 do
+            spr(80 + flagIndex, 25 + flagIndex * 10, 52)
+        end
         for i, matchMode in ipairs(MATCH_MODES) do
             local color = 5
             if i - 1 == modeCursorPosition then
                 color = 7
             end
-            printShadowCentre(matchMode[3], 64 + 8 * i, color)
+            printShadowCentre(matchMode[3], 68 + 8 * i, color)
         end
+        printShadow('ruairidx', 4, 4)
+        printShadow(VERSION, 100, 4)
     end
-    printShadowCentre('\x8e accept - \x97 back', 120)
+    printShadow('\x8e accept - \x97 back', 26, 120)
     resetPalette()
 end
 
