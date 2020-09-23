@@ -71,11 +71,15 @@ function printShadow(text, x, y, color)
     print(text, x, y, color)
 end
 
+function squared(a)
+    return a * a
+end
+
 function getDistance(x1, y1, x2, y2)
     local dx = (x1 - x2)/8
     local dy = (y1 - y2)/8
     return 8 * sqrt(
-        dx * dx + dy * dy
+        squared(dx) + squared(dy)
     )
 end
 
@@ -250,7 +254,7 @@ function Ball:move(x, y)
         elseif collision.other:is(Wall) then
             local elasticity = -1
             if collision.other:is(GoalWall) then
-                elasticity = -0.25
+                elasticity = -0.1
             else
                 sfx(62)
             end
@@ -269,7 +273,7 @@ function Ball:move(x, y)
 end
 
 function Ball:getSpeed()
-    return sqrt(self.velX * self.velX + self.velY * self.velY)
+    return sqrt(squared(self.velX) + squared(self.velY))
 end
 
 function Ball:setPosition(x, y)
@@ -361,11 +365,11 @@ function Player:resetPosition(isKickOff, targetX, targetY)
         if self.team.playingUp then
             self.defendingHomeX = (5 - self.gridX) * 48 - 24
             self.defendingHomeY = (9 - self.gridY) * 48 - 24
-            self.attackingHomeY = self.defendingHomeY - 12 * 8
+            self.attackingHomeY = self.defendingHomeY - 96
         else
             self.defendingHomeX = self.gridX * 48 - 24
             self.defendingHomeY = self.gridY * 48 - 24
-            self.attackingHomeY = self.defendingHomeY + 12 * 8
+            self.attackingHomeY = self.defendingHomeY + 96
         end
     end
     self.attackingHomeX = self.defendingHomeX
@@ -690,7 +694,7 @@ function Player:move(velX, velY)
         velY = 0
     end
 
-    local magnitude = 8 * sqrt(velX/8 * velX/8 + velY/8 * velY/8)
+    local magnitude = sqrt(squared(velX) + squared(velY))
     if magnitude > Player.MAX_SPEED then
         velX = Player.MAX_SPEED * velX / magnitude
         velY = Player.MAX_SPEED * velY / magnitude
@@ -805,6 +809,8 @@ function Goalkeeper:draw()
 end
 
 Team = Object:extend()
+-- Don't automatically switch players rapidly
+Team.PLAYER_SWITCH_TIMER_MAX = 90
 
 Team.GRID_POSITIONS = {
         -- Defence
@@ -844,6 +850,7 @@ function Team:new(teamId, joypadId, playingUp, isAway)
     end
     self.selectedPlayerIndex = 1
     self.goals = 0
+    self.playerSwitchTimer = 0
 end
 
 function Team:resetPosition(isKickOff, targetX, targetY)
@@ -852,20 +859,34 @@ function Team:resetPosition(isKickOff, targetX, targetY)
     end
 end
 
-function Team:findPlayerClosestToBall(excludePlayerId)
+function Team:findPlayerClosestToBall(selectedPlayerIndex, exclude)
     -- Find the player closest to the ball (for switching player control)
-    -- *excluding* the currently controlled player; the user is switching,
-    -- so they obviously don't want them.
+    -- If selectedPlayer is provided, candidate closest player must be in a 
+    -- significantly better position in order to override player selection.
+    -- Alternatively, if `exclude` is set, exclude the selected player altogether
+    -- (so when a player asks for a new player, they always get one)
     -- Ball speed is taken into account to make it a true "who will get there first"
-    local closestPlayerIndex, timeToBall = excludePlayerId, 9999
+    local closestPlayerIndex, timeToBall = nil, 9999
     for i, player in ipairs(self.players) do
         if i ~= excludePlayerId and not player.isGoalkeeper then
-            local candidateDistance = getDistance(
+            -- Quick dirty way to take speed into account; ask for how far away
+            -- the player will be in 0.25 seconds.
+            local candidateTimeToBall = getDistance(
                 player.x, player.y,
-                ball.x + ball.velX, ball.y + ball.velY
+                ball.x + ball.velX * 15, ball.y + ball.velY * 15
             )
-            if candidateDistance < timeToBall then
-                closestPlayerIndex, timeToBall = i, candidateDistance
+
+            -- Advantage is given to currently selected player; player
+            -- selection should only be overriden if we're certain this
+            -- is a better option.
+            if selectedPlayerIndex and i == selectedPlayerIndex then
+                candidateTimeToBall = candidateTimeToBall / 2
+            end
+
+            local shouldExclude = exclude and i == selectedPlayerIndex
+
+            if not shouldExclude and candidateTimeToBall < timeToBall then
+                closestPlayerIndex, timeToBall = i, candidateTimeToBall
             end
         end
     end
@@ -884,20 +905,14 @@ end
 
 function Team:update()
     -- Switch players if team doesn't currently have the ball
+    local toggleSelectedPlayer = (self.joypadId ~= nil and btnp(4, self.joypadId))
+
     if
-        (
-            (self.joypadId ~= nil and btnp(4, self.joypadId)) or
-            -- Automatically switch when player is too far from ball.
-            (goalTimer == 0 and getDistance(
-                self.players[self.selectedPlayerIndex].x,
-                self.players[self.selectedPlayerIndex].y,
-                ball.x,
-                ball.y
-            ) > 80)
-        ) and
+        toggleSelectedPlayer or self.playerSwitchTimer == 0 and
         (ball.controllingPlayer == nil or ball.controllingPlayer.team ~= self)
     then
-        self.selectedPlayerIndex = self:findPlayerClosestToBall(self.selectedPlayerIndex)
+        self.selectedPlayerIndex = self:findPlayerClosestToBall(self.selectedPlayerIndex, toggleSelectedPlayer)
+        self.playerSwitchTimer = Team.PLAYER_SWITCH_TIMER_MAX
     end
 
     for i, player in ipairs(self.players) do
@@ -917,6 +932,10 @@ function Team:update()
 
     -- Set one player as the ball chaser if they're closest to the ball.
     self.players[self:findPlayerClosestToBall(self.selectedPlayerIndex)].isChasingBall = true
+
+    if self.playerSwitchTimer > 0 then
+        self.playerSwitchTimer = self.playerSwitchTimer - 1
+    end
 end
 
 Team.CURSOR_COLORS = { 8, 12 }
@@ -938,53 +957,53 @@ function Team:draw()
     resetPalette()
 end
 
-FIELD_COLORS = { 3, 11 }
-FIELD_STRIPE_HEIGHT = 2
-WIDTH_18_YARD = 12
-HEIGHT_18_YARD = 6
-WIDTH_6_YARD = 6
-HEIGHT_6_YARD = 2
-GOAL_WIDTH = 4
+FIELD_COLORS = { 89, 91 }
+-- FIELD_STRIPE_HEIGHT = 2
+-- WIDTH_18_YARD = 12 -- hardcoded into calculations
+-- HEIGHT_18_YARD = 6 -- hardcoded into calculations
+-- WIDTH_6_YARD = 6 -- hardcoded into calculations
+-- HEIGHT_6_YARD = 2 -- hardcoded into calculations
+-- GOAL_WIDTH = 4 -- hardcoded into calculations
+FIELD_TEXTURE = '0b1111111101111111.1'
+
 function drawField()
-    for y = -4, 51, FIELD_STRIPE_HEIGHT do
-        rectfill(
-            -32,
-            y * 8,
-            256,
-            (y + FIELD_STRIPE_HEIGHT) * 8 - 1,
-            FIELD_COLORS[flr(y/2) % 2 + 1]
-        )
+    for y = -32, 408, 16 do
+        for x = -32, 224, 16 do
+            spr(
+                FIELD_COLORS[flr(y/16) % 2 + 1],
+                x, y,
+                2, 2
+            )
+        end
     end
     rect(0, 0, 191, 383, 7)
     -- 18 yards
-    local x18Yards = (24 - WIDTH_18_YARD)/2
     rect(
-        x18Yards * 8,
+        48,
         0,
-        (x18Yards + WIDTH_18_YARD) * 8 - 1,
-        8 * HEIGHT_18_YARD - 1,
+        143,
+        47,
         7
     )
     rect(
-        x18Yards * 8,
-        (48 - HEIGHT_18_YARD) * 8,
-        (x18Yards + WIDTH_18_YARD) * 8 - 1,
+        48,
+        336,
+        143,
         383,
         7
     )
     -- 6 yards
-    local x6Yards = (24 - WIDTH_6_YARD)/2
     rect(
-        x6Yards * 8,
+        72,
         0,
-        (x6Yards + WIDTH_6_YARD) * 8 - 1,
-        8 * HEIGHT_6_YARD - 1,
+        119,
+        15,
         7
     )
     rect(
-        x6Yards * 8,
-        (48 - HEIGHT_6_YARD) * 8,
-        (x6Yards + WIDTH_6_YARD) * 8 - 1,
+        72,
+        368,
+        119,
         383,
         7
     )
@@ -1007,8 +1026,8 @@ function drawField()
     --     7
     -- )
     -- Ds
-    spr(59, 76, HEIGHT_18_YARD * 8, 5, 1)
-    spr(75, 76, (48 - HEIGHT_18_YARD) * 8 - 8, 5, 1)
+    spr(59, 76, 48, 5, 1)
+    spr(75, 76, 328, 5, 1)
     -- halfway line
     line(0, 192, 191, 192, 7)
     circ(96, 192, 32, 7)
@@ -1041,6 +1060,11 @@ HALF_TIME_TIMER_MAX = 300
 
 FIELD_LINE_OFFSET = 4
 function initGame(team1, team2, joypadIds)
+    showingControls = true
+    menuitem(1, 'controls', (function ()
+        showingControls = true
+    end))
+
     bumpWorld = bump.newWorld(8)
     resetPalette()
     ball = Ball(0, 0)
@@ -1167,84 +1191,90 @@ function resetPositions(isKickOff)
 end
 
 function updateGame()
-    if
-        ballOutTimer == 0 and
-        halfTimeTimer == 0 and
-        not isFullTime()
-    then
-        -- Update teams in a random order
-        -- If teams are always updated in the same order,
-        -- the team that's updated last has a significant advantage
-        -- (e.g. wins basically every 1-on-1 and is very hard to disposess)
-        local updatedTeams = {}
-        while #updatedTeams < 2 do
-            local i = flr(rnd(2)) + 1
-            if count(updatedTeams, i) == 0 then
-                teams[i]:update()
-                add(updatedTeams, i)
+    if showingControls then
+        if btnp(4) then
+            showingControls = false
+        end
+    else
+        if
+            ballOutTimer == 0 and
+            halfTimeTimer == 0 and
+            not isFullTime()
+        then
+            -- Update teams in a random order
+            -- If teams are always updated in the same order,
+            -- the team that's updated last has a significant advantage
+            -- (e.g. wins basically every 1-on-1 and is very hard to disposess)
+            local updatedTeams = {}
+            while #updatedTeams < 2 do
+                local i = flr(rnd(2)) + 1
+                if count(updatedTeams, i) == 0 then
+                    teams[i]:update()
+                    add(updatedTeams, i)
+                end
+            end
+            if not isFullTime() and goalTimer == 0 and not isFreeKick and not isKickOff then
+                gameTimer = gameTimer + 1
+                if gameTimer == HALF_LENGTH * 60 then
+                    halfTimeTimer = HALF_TIME_TIMER_MAX
+                end
+
+                -- Big cheer if someone won
+                if isFullTime() and teams[1].goals ~= teams[2].goals then
+                    music(2)
+                end
             end
         end
-        if not isFullTime() and goalTimer == 0 and not isFreeKick and not isKickOff then
-            gameTimer = gameTimer + 1
-            if gameTimer == HALF_LENGTH * 60 then
-                halfTimeTimer = HALF_TIME_TIMER_MAX
-            end
 
-            -- Big cheer if someone won
-            if isFullTime() and teams[1].goals ~= teams[2].goals then
-                music(2)
+        if goalTimer > 0 then
+            ballOutTimer = 0
+            goalTimer = goalTimer - 1
+            if goalTimer == 0 then
+                resetKickOff()
+                isFreeKick = false
             end
         end
-    end
 
-    if goalTimer > 0 then
-        ballOutTimer = 0
-        goalTimer = goalTimer - 1
-        if goalTimer == 0 then
-            resetKickOff()
-            isFreeKick = false
-        end
-    end
-
-    if ballOutTimer > 0 then
-        ballOutTimer = ballOutTimer - 1
-        if ballOutTimer == 0 then
-            -- This function is set depending on which field line was crossed
-            ballOutReset()
-            resetPositions()
-        end
-    elseif kickOffDelay > 0 then
-        kickOffDelay = kickOffDelay - 1
-    end
-
-    if halfTimeTimer > 0 then
-        halfTimeTimer = halfTimeTimer - 1
-        if halfTimeTimer == 0 then
-            for team in all(teams) do
-                -- Change ends!
-                team.playingUp = not team.playingUp
-                fieldLines[1].attackingTeam = teams[1]
-                fieldLines[2].attackingTeam = teams[1]
-                fieldLines[3].attackingTeam = teams[2]
-                fieldLines[4].attackingTeam = teams[2]
-                fieldLines[7].attackingTeam = teams[1]
-                fieldLines[8].attackingTeam = teams[2]
+        if ballOutTimer > 0 then
+            ballOutTimer = ballOutTimer - 1
+            if ballOutTimer == 0 then
+                -- This function is set depending on which field line was crossed
+                ballOutReset()
+                resetPositions()
             end
-            kickOffTeam = teams[2]
-            resetKickOff()
+        elseif kickOffDelay > 0 then
+            kickOffDelay = kickOffDelay - 1
         end
-    end
 
-    if halfTimeTimer == 0 and not isFullTime() then
-        ball:update()
-    end
+        if halfTimeTimer > 0 then
+            halfTimeTimer = halfTimeTimer - 1
+            if halfTimeTimer == 0 then
+                for team in all(teams) do
+                    -- Change ends!
+                    team.playingUp = not team.playingUp
+                    fieldLines[1].attackingTeam = teams[1]
+                    fieldLines[2].attackingTeam = teams[1]
+                    fieldLines[3].attackingTeam = teams[2]
+                    fieldLines[4].attackingTeam = teams[2]
+                    fieldLines[7].attackingTeam = teams[1]
+                    fieldLines[8].attackingTeam = teams[2]
+                end
+                kickOffTeam = teams[2]
+                resetKickOff()
+            end
+        end
 
-    if isFullTime() and btnp(4) then
-        transitionTimer = TRANSITION_TIMER_MAX
-        transitionCallback = (function()
-            state = STATES.MAIN_MENU
-            initMainMenu()
-        end)
+        if halfTimeTimer == 0 and not isFullTime() then
+            ball:update()
+        end
+
+        if isFullTime() and btnp(4) then
+            transitionTimer = TRANSITION_TIMER_MAX
+            transitionCallback = (function()
+                state = STATES.MAIN_MENU
+                initMainMenu()
+            end)
+        end
     end
 end
 
@@ -1285,11 +1315,10 @@ function drawGame()
     camera(cameraX, cameraY)
     drawField()
 
-    local goalX = (24 - GOAL_WIDTH)/2
-    spr(7, goalX * 8, -24, 4, 3)
+    spr(7, 80, -24, 4, 3)
     ball:draw()
     for team in all(teams) do team:draw() end
-    spr(11, goalX * 8, 372, 4, 3)
+    spr(11, 80, 372, 4, 3)
     camera()
 
     if goalTimer > 0 then
@@ -1322,6 +1351,19 @@ function drawGame()
     else
         drawScoreDisplay()
     end
+
+    if showingControls then
+        rectfill(16, 20, 111, 107, 1)
+        rect(16, 20, 111, 107, 0)
+        printShadowCentre('controls', 24)
+        printShadow('\x8b\x91\x94\x83 - move', 34, 36)
+        printShadowCentre('with ball', 48)
+        printShadow('\x8e - pass', 46, 56)
+        printShadow('\x97 - shoot/clear', 32, 64)
+        printShadowCentre('without ball', 76)
+        printShadow('\x8e - change player', 28, 84)
+        printShadowCentre('press \x8e to continue', 96)
+    end
 end
 
 SELECT_WIDTH = 4
@@ -1343,6 +1385,7 @@ MENU_STATES = {
     TEAMS = 'TEAMS',
 }
 function initMainMenu()
+    menuitem(1)
     music(-1)
     menuState = MENU_STATES.FRIENDLY_MODE
     modeCursorPosition = 0
