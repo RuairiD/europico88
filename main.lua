@@ -151,9 +151,9 @@ Ball.SHOOT_SPEED = 5
 Ball.SHOOT_TIMER_MAX = 60
 Ball.SHOT_INVICIBILITY = 30
 
-function Ball:new(x, y)
-    self.x = x
-    self.y = y
+function Ball:new()
+    self.x = 0
+    self.y = 0
     self.velX = 0
     self.velY = 0
     self.controllingPlayer = nil
@@ -192,30 +192,31 @@ end
 function Ball:move(x, y)
     self.x, self.y, collisions, _ = bumpWorld:move(self, x, y, self.moveFilter)
     for collision in all(collisions) do
-        if collision.other:is(FieldLine) and ballOutTimer == 0 and goalTimer == 0 then
-            if collision.other.isGoal then
+        local other, normal, touch = collision.other, collision.normal, collision.touch
+        if other:is(FieldLine) and ballOutTimer == 0 and goalTimer == 0 then
+            if other.isGoal then
                 goalTimer = GOAL_TIMER_MAX
-                collision.other.attackingTeam.goals = collision.other.attackingTeam.goals + 1
-                goalScoringTeam = collision.other.attackingTeam
+                other.attackingTeam.goals = other.attackingTeam.goals + 1
+                goalScoringTeam = other.attackingTeam
                 isFreeKick = false
                 isKickOff = true
-                setKickOffTeam(collision.other.attackingTeam)
+                setKickOffTeam(other.attackingTeam)
                 music(0)
             else
                 ballOutTimer = BALL_OUT_TIMER_MAX
                 isFreeKick = true
                 setKickOffTeam(self.lastControllingPlayer.team)
                 local x, y
-                if collision.other.attackingTeam then
+                if other.attackingTeam then
                     -- Corner or goal kick
-                    if collision.other.attackingTeam == kickOffTeam then
+                    if other.attackingTeam == kickOffTeam then
                         -- corner
-                        if collision.touch.x < 96 then
+                        if touch.x < 96 then
                             x = 8
                         else
                             x = 185
                         end
-                        if collision.touch.y < 192 then
+                        if touch.y < 192 then
                             y = 8
                         else
                             y = 377
@@ -224,10 +225,10 @@ function Ball:move(x, y)
                         -- goal kick
                         -- hacky way to check which end ball is at
                         x = 96
-                        if collision.touch.y < 16 then
-                            y = 16
+                        if touch.y < 16 then
+                            y = 24
                         else
-                            y = 368
+                            y = 352
                         end
                     end
                     ballOutReset = (function()
@@ -235,7 +236,7 @@ function Ball:move(x, y)
                     end)
                 else
                     -- Kick in
-                    x, y = collision.touch.x, collision.touch.y
+                    x, y = touch.x, touch.y
                     if x < 96 then
                         x = x + 8
                     else
@@ -246,23 +247,23 @@ function Ball:move(x, y)
                     end)
                 end
             end
-        elseif collision.other:is(Wall) then
+        elseif other:is(Wall) then
             local elasticity = -1
-            if collision.other:is(GoalWall) then
+            if other:is(GoalWall) then
                 elasticity = -0.1
             else
                 sfx(62)
             end
-            if collision.normal.x ~= 0 then
+            if normal.x ~= 0 then
                 self.velX = self.velX * elasticity
-            elseif collision.normal.y ~= 0 then
+            elseif normal.y ~= 0 then
                 self.velY = self.velY * elasticity
             end
         elseif
-            collision.other:is(Player) and
-            collision.other:canTakeBall(self)
+            other:is(Player) and
+            other:canTakeBall(self)
         then
-            collision.other:takeBall(self)
+            other:takeBall(self)
         end
     end
 end
@@ -274,6 +275,8 @@ end
 function Ball:setPosition(x, y)
     self.x = x
     self.y = y
+    self.velX = 0
+    self.velY = 0
     bumpWorld:update(self, self.x, self.y, 2, 2)
     self:setControllingPlayer(nil)
 end
@@ -383,9 +386,9 @@ function Player:resetPosition(isKickOff, targetX, targetY)
     local halfway = 192
     if isKickOff then
         if self.team.playingUp and y < halfway then
-            y = halfway + 32
+            y = halfway + 24
         elseif not self.team.playingUp and y > halfway then
-            y = halfway - 32
+            y = halfway - 24
         end
     end
     self:setPosition(x, y)
@@ -474,8 +477,11 @@ function Player:updatePassive()
             if ball.controllingPlayer == self then
                 -- lump it clear
                 ball:shoot(-cos(angleToGoal + rnd(0.3) - 0.15), -sin(angleToGoal + rnd(0.3) - 0.15))
-            elseif getDistance(centreX, centreY, ball.x, ball.y) < 24 and (not ball.controllingPlayer or ball.controllingPlayer.team ~= self.team) then
-                -- Come for ball if it's close.
+            elseif
+                getDistance(centreX, centreY, ball.x, ball.y) < 24 and
+                (not ball.controllingPlayer or ball.controllingPlayer.team ~= self.team)
+            then
+                -- Come for ball if it's close
                 velX = ball.x - centreX
                 velY = ball.y - centreY
             else
@@ -520,7 +526,9 @@ function Player:updatePassive()
                         centreY - closestOpposingPlayer.y
                     )
                     if
-                        distance < 32 and (rnd() > 0.7 or abs((angleToGoal - angleToPlayer + 0.5) % 1 - 0.5) < 0.2)
+                        -- Try to get rid of the ball if player is close in front of them, or if player is kinda close
+                        -- and random constraint is met.
+                        distance < 32 and (rnd() > 0.9 or abs((angleToGoal - angleToPlayer + 0.5) % 1 - 0.5) < 0.2)
                     then
                         -- If player is being closed down, either clear the ball (if far from
                         -- goal), shoot (if close to goal) or attempt to pass it to a teammate.
@@ -718,11 +726,12 @@ function Player:move(velX, velY)
 
     self.x, self.y, collisions, _ = bumpWorld:move(self, targetX, targetY, self.moveFilter)
     for collision in all(collisions) do
+        local other = collision.other
         if
-            collision.other:is(Ball) and
-            self:canTakeBall(collision.other)
+            other:is(Ball) and
+            self:canTakeBall(other)
         then
-            self:takeBall(collision.other)
+            self:takeBall(other)
         end
     end
 
@@ -758,7 +767,7 @@ function Player:canTakeBall(ball)
         -- player doesn't already have ball
         ball.controllingPlayer ~= self and
         -- Harder to take ball if player already has ball.
-        (not ball.controllingPlayer or rnd() > 0.75) and
+        (not ball.controllingPlayer or rnd() > 0.9) and
         ballOutTimer == 0 and
         goalTimer == 0 and
         self.ballLostTimer == 0 and
@@ -1062,7 +1071,7 @@ function initGame(team1, team2, joypadIds)
 
     bumpWorld = bump.newWorld(8)
     resetPalette()
-    ball = Ball(0, 0)
+    ball = Ball()
     local isAway = false
     if TEAMS[team2].palette[1] == TEAMS[team1].palette[1] then
         isAway = true
@@ -1137,11 +1146,11 @@ function initGame(team1, team2, joypadIds)
     isKickOff = true
     kickOffTeam = teams[1]
 
-    resetKickOff()
-    music(1)
-
     cameraTargetX, cameraTargetY = ball.x - 63, ball.y - 63
     cameraX, cameraY = cameraTargetX, cameraTargetY
+
+    resetKickOff()
+    music(1)
 end
 
 function setKickOffTeam(nonKickOffTeam)
@@ -1163,6 +1172,7 @@ function resetKickOff()
     ball:setPosition(96, 192)
     isKickOff = true
     resetPositions(true)
+    updateCamera(true)
 end
 
 function resetPositions(isKickOff)
@@ -1249,6 +1259,10 @@ function updateGame()
             end
         end
 
+        if halfTimeTimer == 0 and not isFullTime() then
+            ball:update()
+        end
+
         if goalTimer > 0 then
             ballOutTimer = 0
             goalTimer = goalTimer - 1
@@ -1258,7 +1272,6 @@ function updateGame()
                 transitionCallback = (function ()
                     resetKickOff()
                     isFreeKick = false
-                    updateCamera(true)
                 end)
             end
         end
@@ -1272,7 +1285,6 @@ function updateGame()
                     -- This function is set depending on which field line was crossed
                     ballOutReset()
                     resetPositions()
-                    updateCamera(true)
                 end)
             end
         else
@@ -1290,21 +1302,21 @@ function updateGame()
         if halfTimeTimer > 0 then
             halfTimeTimer = halfTimeTimer - 1
             if halfTimeTimer == 0 then
-                for team in all(teams) do
-                    -- Change ends!
-                    team.playingUp = not team.playingUp
-                end
-                for i=1, #LINE_ATTACKING_TEAMS, 2 do
-                    fieldLines[LINE_ATTACKING_TEAMS[i]].attackingTeam = teams[LINE_ATTACKING_TEAMS[i + 1]]
-                end
+                transitionTimer = TRANSITION_TIMER_MAX
+                transitionFast = false
+                transitionCallback = (function()
+                    for team in all(teams) do
+                        -- Change ends!
+                        team.playingUp = not team.playingUp
+                    end
+                    for i=1, #LINE_ATTACKING_TEAMS, 2 do
+                        fieldLines[LINE_ATTACKING_TEAMS[i]].attackingTeam = teams[LINE_ATTACKING_TEAMS[i + 1]]
+                    end
 
-                kickOffTeam = teams[2]
-                resetKickOff()
+                    kickOffTeam = teams[2]
+                    resetKickOff()
+                end)
             end
-        end
-
-        if halfTimeTimer == 0 and not isFullTime() then
-            ball:update()
         end
 
         if isFullTime() and btnp(4) then
