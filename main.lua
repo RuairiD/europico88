@@ -158,7 +158,6 @@ function Ball:new(x, y)
     self.velY = 0
     self.controllingPlayer = nil
     self.lastControllingPlayer = nil
-    self.shootTimer = 0
     bumpWorld:add(self, self.x, self.y, 2, 2)
 end
 
@@ -181,10 +180,6 @@ function Ball:update()
     self.x = self.x + self.velX
     self.y = self.y + self.velY
     self:move(self.x, self.y)
-
-    if self.shootTimer > 0 then
-        self.shootTimer = self.shootTimer - 1
-    end
 end
 
 function Ball:setControllingPlayer(controllingPlayer)
@@ -296,7 +291,6 @@ end
 
 function Ball:shoot(velX, velY)
     self.controllingPlayer.ballLostTimer = Player.BALL_LOST_BY_KICKING_TIMER_MAX 
-    self.shootTimer = Ball.SHOOT_TIMER_MAX
     self:setControllingPlayer(nil)
     local scale = (0.8 + rnd(0.4))
     self.velX = scale * Ball.SHOOT_SPEED * velX 
@@ -815,8 +809,8 @@ Team.PLAYER_SWITCH_TIMER_MAX = 90
 Team.GRID_POSITIONS = {
         -- Defence
     "1, 2", -- RB
-    "2, 1", -- CB
-    "3, 1", -- CB
+    "2, 1.5", -- CB
+    "3, 1.5", -- CB
     "4, 2", -- LB
     -- Midfield
     "1, 4", -- RW
@@ -1054,6 +1048,7 @@ end
 
 GOAL_TIMER_MAX = 300
 BALL_OUT_TIMER_MAX = 180
+-- 2 minutes
 HALF_LENGTH = 120
 GAME_TIME_SCALE = 2700 -- 45 * 60
 HALF_TIME_TIMER_MAX = 300
@@ -1151,6 +1146,7 @@ end
 
 function setKickOffTeam(nonKickOffTeam)
     kickOffDelay = 30 + flr(rnd(60))
+    kickOffWhistleDelay = 15
     kickOffTeam = teams[1]
     if nonKickOffTeam == teams[1] then
         kickOffTeam = teams[2]
@@ -1163,6 +1159,7 @@ end
 
 function resetKickOff()
     kickOffDelay = 60
+    kickOffWhistleDelay = 15
     ball:setPosition(96, 192)
     isKickOff = true
     resetPositions(true)
@@ -1193,7 +1190,25 @@ function resetPositions(isKickOff)
     nearestPlayer.team:setSelectedPlayer(nearestPlayer)
 end
 
+function updateCamera(snap)
+    cameraTargetX, cameraTargetY = ball.x - 63, ball.y - 63
+    if goalTimer > 0 and ball.lastControllingPlayer then
+        cameraTargetX, cameraTargetY = ball.lastControllingPlayer.x - 61, ball.lastControllingPlayer.y - 61
+    elseif ball.controllingPlayer then
+        cameraTargetX, cameraTargetY = ball.controllingPlayer.x - 61, ball.controllingPlayer.y - 61
+    end
+    cameraX = cameraX + (cameraTargetX - cameraX)/8
+    cameraY = cameraY + (cameraTargetY - cameraY)/8
+    -- `snap` forces camera to target location rather than letting it transition naturally.
+    if snap then
+        cameraX = cameraTargetX
+        cameraY = cameraTargetY
+    end
+end
+
+LINE_ATTACKING_TEAMS = split("1, 1, 2, 1, 3, 2, 4, 2, 7, 1, 8, 2")
 function updateGame()
+    updateCamera()
     if showingControls then
         if btnp(4) then
             showingControls = false
@@ -1208,23 +1223,28 @@ function updateGame()
             -- If teams are always updated in the same order,
             -- the team that's updated last has a significant advantage
             -- (e.g. wins basically every 1-on-1 and is very hard to disposess)
-            local updatedTeams = {}
-            while #updatedTeams < 2 do
-                local i = flr(rnd(2)) + 1
-                if count(updatedTeams, i) == 0 then
-                    teams[i]:update()
-                    add(updatedTeams, i)
-                end
+            if rnd() > 0.5 then
+                teams[1]:update()
+                teams[2]:update()
+            else
+                teams[2]:update()
+                teams[1]:update()
             end
+
             if not isFullTime() and goalTimer == 0 and not isFreeKick and not isKickOff then
                 gameTimer = gameTimer + 1
                 if gameTimer == HALF_LENGTH * 60 then
                     halfTimeTimer = HALF_TIME_TIMER_MAX
+                    sfx(52) -- whistle
                 end
 
-                -- Big cheer if someone won
-                if isFullTime() and teams[1].goals ~= teams[2].goals then
-                    music(2)
+                if isFullTime() then
+                    -- Big cheer if someone won
+                    if teams[1].goals ~= teams[2].goals then
+                        music(2)
+                    end
+                    -- Whistle
+                    sfx(51)
                 end
             end
         end
@@ -1233,20 +1253,38 @@ function updateGame()
             ballOutTimer = 0
             goalTimer = goalTimer - 1
             if goalTimer == 0 then
-                resetKickOff()
-                isFreeKick = false
+                transitionTimer = TRANSITION_TIMER_MAX
+                transitionFast = false
+                transitionCallback = (function ()
+                    resetKickOff()
+                    isFreeKick = false
+                    updateCamera(true)
+                end)
             end
         end
 
         if ballOutTimer > 0 then
             ballOutTimer = ballOutTimer - 1
             if ballOutTimer == 0 then
-                -- This function is set depending on which field line was crossed
-                ballOutReset()
-                resetPositions()
+                transitionTimer = TRANSITION_TIMER_MAX
+                transitionFast = true
+                transitionCallback = (function ()
+                    -- This function is set depending on which field line was crossed
+                    ballOutReset()
+                    resetPositions()
+                    updateCamera(true)
+                end)
             end
-        elseif kickOffDelay > 0 then
-            kickOffDelay = kickOffDelay - 1
+        else
+            if kickOffDelay > 0 then
+                kickOffDelay = kickOffDelay - 1
+                -- kickOffDelay is always guaranteed to be at least as high as kickOffWhistleDelay
+                -- (since whistle plays shortly before computer is allowed to play)
+                kickOffWhistleDelay = kickOffWhistleDelay - 1
+                if kickOffWhistleDelay == 0 then
+                    sfx(53)
+                end
+            end
         end
 
         if halfTimeTimer > 0 then
@@ -1255,13 +1293,11 @@ function updateGame()
                 for team in all(teams) do
                     -- Change ends!
                     team.playingUp = not team.playingUp
-                    fieldLines[1].attackingTeam = teams[1]
-                    fieldLines[2].attackingTeam = teams[1]
-                    fieldLines[3].attackingTeam = teams[2]
-                    fieldLines[4].attackingTeam = teams[2]
-                    fieldLines[7].attackingTeam = teams[1]
-                    fieldLines[8].attackingTeam = teams[2]
                 end
+                for i=1, #LINE_ATTACKING_TEAMS, 2 do
+                    fieldLines[LINE_ATTACKING_TEAMS[i]].attackingTeam = teams[LINE_ATTACKING_TEAMS[i + 1]]
+                end
+
                 kickOffTeam = teams[2]
                 resetKickOff()
             end
@@ -1273,21 +1309,13 @@ function updateGame()
 
         if isFullTime() and btnp(4) then
             transitionTimer = TRANSITION_TIMER_MAX
+            transitionFast = false
             transitionCallback = (function()
                 state = STATES.MAIN_MENU
                 initMainMenu()
             end)
         end
     end
-
-    cameraTargetX, cameraTargetY = ball.x - 63, ball.y - 63
-    if goalTimer > 0 and ball.lastControllingPlayer then
-        cameraTargetX, cameraTargetY = ball.lastControllingPlayer.x - 61, ball.lastControllingPlayer.y - 61
-    elseif ball.controllingPlayer then
-        cameraTargetX, cameraTargetY = ball.controllingPlayer.x - 61, ball.controllingPlayer.y - 61
-    end
-    cameraX = cameraX + (cameraTargetX - cameraX)/8
-    cameraY = cameraY + (cameraTargetY - cameraY)/8
 end
 
 function drawScoreDisplay()
@@ -1445,6 +1473,7 @@ function updateMainMenu()
         if p2Cursor.selected then
             if btnp(4) then
                 transitionTimer = TRANSITION_TIMER_MAX
+                transitionFast = false
                 transitionCallback = (function ()
                     state = STATES.GAME
                     initGame(
@@ -1562,7 +1591,12 @@ end
 TRANSITION_TIMER_MAX = 60
 function updateTransition()
     if transitionTimer > 0 then
-        transitionTimer = transitionTimer - 1
+        -- Allow for faster transitions e.g. after goals
+        local dt = 1
+        if transitionFast then
+            dt = 2
+        end
+        transitionTimer = transitionTimer - dt
         if transitionTimer == TRANSITION_TIMER_MAX/2 and transitionCallback then
             transitionCallback()
         end
