@@ -3,7 +3,7 @@
 
 ## Features
 * Play as all 8 teams participating in Euro 88.
-* Player with a friend, against the computer, or just sit back and watch the computer play itself!
+* Play with a friend, against the computer, or just sit back and watch the computer play itself!
 
 <p float="left">
   <img src="/doc/1.0.0_4.png?raw=true" width="192" />
