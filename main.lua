@@ -1426,7 +1426,7 @@ MENU_STATES = {
 }
 function initMainMenu()
     menuitem(1)
-    music(-1)
+    music(3)
     menuState = MENU_STATES.FRIENDLY_MODE
     modeCursorPosition = 0
     p1Cursor = {
@@ -1449,16 +1449,12 @@ function updateCursor(cursor)
         sfx(63)
     elseif btnp(0) then
         cursor.x = cursor.x - 1
-        sfx(60)
     elseif btnp(1) then
         cursor.x = cursor.x + 1
-        sfx(60)
     elseif btnp(2) then
         cursor.y = cursor.y - 1
-        sfx(60)
     elseif btnp(3) then
         cursor.y = cursor.y + 1
-        sfx(60)
     end
 
     cursor.x = cursor.x % 4
@@ -1469,10 +1465,8 @@ function updateMainMenu()
     if menuState == MENU_STATES.FRIENDLY_MODE then
         if btnp(2) then
             modeCursorPosition = modeCursorPosition - 1
-            sfx(60)
         elseif btnp(3) then
             modeCursorPosition = modeCursorPosition + 1
-            sfx(60)
         end
         modeCursorPosition = modeCursorPosition % 3
 
