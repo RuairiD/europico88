@@ -1,4 +1,4 @@
-VERSION = "v0.4.0"
+VERSION = "v1.0.0"
 
 STATES = {
     MAIN_MENU = 'MAIN_MENU',
