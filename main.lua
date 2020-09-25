@@ -1068,6 +1068,7 @@ function initGame(team1, team2, joypadIds)
     menuitem(1, 'controls', (function ()
         showingControls = true
     end))
+    menuitem(2, 'quit match', returnToMenu)
 
     bumpWorld = bump.newWorld(8)
     resetPalette()
@@ -1149,8 +1150,8 @@ function initGame(team1, team2, joypadIds)
     cameraTargetX, cameraTargetY = ball.x - 63, ball.y - 63
     cameraX, cameraY = cameraTargetX, cameraTargetY
 
+    music(1, 500)
     resetKickOff()
-    music(1)
 end
 
 function setKickOffTeam(nonKickOffTeam)
@@ -1214,6 +1215,15 @@ function updateCamera(snap)
         cameraX = cameraTargetX
         cameraY = cameraTargetY
     end
+end
+
+function returnToMenu()
+    transitionTimer = TRANSITION_TIMER_MAX
+    transitionFast = false
+    transitionCallback = (function()
+        state = STATES.MAIN_MENU
+        initMainMenu()
+    end)
 end
 
 LINE_ATTACKING_TEAMS = split("1, 1, 2, 1, 3, 2, 4, 2, 7, 1, 8, 2")
@@ -1320,12 +1330,7 @@ function updateGame()
         end
 
         if isFullTime() and btnp(4) then
-            transitionTimer = TRANSITION_TIMER_MAX
-            transitionFast = false
-            transitionCallback = (function()
-                state = STATES.MAIN_MENU
-                initMainMenu()
-            end)
+            returnToMenu()
         end
     end
 end
@@ -1426,6 +1431,7 @@ MENU_STATES = {
 }
 function initMainMenu()
     menuitem(1)
+    menuitem(2)
     music(3)
     menuState = MENU_STATES.FRIENDLY_MODE
     modeCursorPosition = 0
@@ -1489,6 +1495,7 @@ function updateMainMenu()
                     )
                 end)
                 sfx(63)
+                music(-1, 500)
             elseif btnp(5) then
                 p2Cursor.selected = false
                 sfx(61)
