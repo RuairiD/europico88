@@ -352,21 +352,20 @@ function Player:resetPosition(isKickOff, targetX, targetY)
         self.width = 9
         self.height = 9
         self.defendingHomeX = 92
+        self.defendingHomeY = 0
         if self.team.playingUp then
             self.defendingHomeY = 376
-        else
-            self.defendingHomeY = 0
         end
         self.attackingHomeY = self.defendingHomeY
     else
+        self.defendingHomeX = self.gridX * 48 - 24
+        self.defendingHomeY = self.gridY * 48 - 24
+        self.attackingHomeY = self.defendingHomeY + 96
+
         if self.team.playingUp then
             self.defendingHomeX = (5 - self.gridX) * 48 - 24
             self.defendingHomeY = (9 - self.gridY) * 48 - 24
             self.attackingHomeY = self.defendingHomeY - 96
-        else
-            self.defendingHomeX = self.gridX * 48 - 24
-            self.defendingHomeY = self.gridY * 48 - 24
-            self.attackingHomeY = self.defendingHomeY + 96
         end
     end
     self.attackingHomeX = self.defendingHomeX
@@ -556,16 +555,14 @@ function Player:updatePassive()
                     targetY = self.defendingHomeY - 16 * sin(angleToBall)
                     if self.isChasingBall then
                         -- Ball is close, go to ball!
-                        targetX = ball.x
-                        targetY = ball.y
+                        targetX, targetY = ball.x, ball.y
                     end
                 else
                     targetX = self.attackingHomeX - 16 * cos(angleToBall)
                     targetY = self.attackingHomeY - 16 * sin(angleToBall)
                     if ball.controllingPlayer == nil and self.isChasingBall then
                         -- Ball is close, go to ball!
-                        targetX = ball.x
-                        targetY = ball.y
+                        targetX, targetY = ball.x, ball.y
                     end
                 end
 
@@ -578,15 +575,13 @@ function Player:updatePassive()
     else
         -- Goal scored. Run towards scorer!
         self.isRunning = false
-        if goalScoringTeam == self.team then
+        if goalScoringTeam == self.team and not self.isGoalkeeper then
             if ball.lastControllingPlayer ~= self then
-                velX = (ball.lastControllingPlayer.x + rnd(16) - 8) - self.x
-                velY = (ball.lastControllingPlayer.y + rnd(16) - 8) - self.y
+                velX, velY = (ball.lastControllingPlayer.x + rnd(16) - 8) - self.x, (ball.lastControllingPlayer.y + rnd(16) - 8) - self.y
                 self.isRunning = true
             else
                 -- Run to nearest corner!
-                local targetX = 0
-                local targetY = 0
+                local targetX, targetY = 0, 0
                 if self.x > 96 then
                     targetX = 192
                 end
@@ -1618,8 +1613,7 @@ end
 
 
 function drawTransition()
-    local progress = transitionTimer/TRANSITION_TIMER_MAX
-    local x = -144 + 256 * progress
+    local x = -144 + 256 * (transitionTimer/TRANSITION_TIMER_MAX)
     fillp('0b0101101001011010.1')
     rectfill(x, 0, x + 143, 127, 0)
     fillp()
@@ -1627,9 +1621,11 @@ function drawTransition()
 end
 
 function _init()
-    transitionTimer = TRANSITION_TIMER_MAX/2
-    state = STATES.MAIN_MENU
-    initMainMenu()
+    transitionTimer = TRANSITION_TIMER_MAX
+    transitionCallback = (function ()
+        state = STATES.MAIN_MENU
+        initMainMenu()
+    end)
 end
 
 UPDATES = {
@@ -1649,7 +1645,9 @@ DRAWS = {
     MAIN_MENU = drawMainMenu,
 }
 function _draw()
-    DRAWS[state]()
+    if state then
+        DRAWS[state]()
+    end
 
     drawTransition()
 end
